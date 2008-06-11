@@ -39,4 +39,12 @@ Repositories:
 repository id: 1
 review request draft saved: http://reviewboard.example.com/r/366/
 
+To update the review request ID 12 with the tip changeset:
+
+$ hg postreview -r 12 tip
+login to http://reviewboard.example.com
+username: ...
+password:
+review request draft saved: http://reviewboard.example.com/r/12/
+
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>

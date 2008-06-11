@@ -9,8 +9,7 @@ demandimport.disable()
 from reviewboard import ReviewBoard, ReviewBoardError
 
 def postreview(ui, repo, rev, **opts):
-    '''post changeset to a reviewboard server
-    '''
+    '''post changeset to a reviewboard server'''
 
     server = ui.config('reviewboard', 'server')
     if not server:
@@ -18,8 +17,7 @@ def postreview(ui, repo, rev, **opts):
                 _('please specify a reviewboard server in your .hgrc file') )
 
     def getdiff(repo, rev):
-        '''return diff for the specified revision
-        '''
+        '''return diff for the specified revision'''
         patches = []
 
         class exportee:
@@ -65,27 +63,36 @@ def postreview(ui, repo, rev, **opts):
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
 
-    try:
-        repositories = reviewboard.repositories()
-    except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+    request_id = False
 
-    if not repositories:
-        raise util.Abort(_('no repositories configured at %s' % server))
-
-    ui.status('Repositories:\n')
-    for r in repositories:
-        ui.status('[%s] %s\n' % (r['id'], r['name']) )
-    if len(repositories) > 1:
-        repo_id = ui.prompt('repository id:', '\d+')
+    if opts.get('requestid'):
+        request_id = opts.get('requestid')
+        try:
+            reviewboard.update_request(request_id, fields)
+        except ReviewBoardError, msg:
+            raise util.Abort(_(msg))
     else:
-        repo_id = repositories[0]['id']
-        ui.status('repository id: %s\n' % repo_id)
+        try:
+            repositories = reviewboard.repositories()
+        except ReviewBoardError, msg:
+            raise util.Abort(_(msg))
 
-    try:
-        request_id = reviewboard.new_request(repo_id, fields)
-    except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+        if not repositories:
+            raise util.Abort(_('no repositories configured at %s' % server))
+
+        ui.status('Repositories:\n')
+        for r in repositories:
+            ui.status('[%s] %s\n' % (r['id'], r['name']) )
+        if len(repositories) > 1:
+            repo_id = ui.prompt('repository id:', '\d+')
+        else:
+            repo_id = repositories[0]['id']
+            ui.status('repository id: %s\n' % repo_id)
+
+        try:
+            request_id = reviewboard.new_request(repo_id, fields)
+        except ReviewBoardError, msg:
+            raise util.Abort(_(msg))
 
     request_url = '%s/%s/%s/' % (server, "r", request_id)
 
@@ -96,6 +103,8 @@ def postreview(ui, repo, rev, **opts):
 
 cmdtable = {
     "postreview":
-        (postreview,[],
-         _('hg postreview [REVISION]')),
+        (postreview,
+        [('r', 'requestid', '', _('request ID to update')),
+        ],
+         _('hg postreview [OPTION]... [REVISION]')),
 }

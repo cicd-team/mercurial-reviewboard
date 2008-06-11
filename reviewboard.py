@@ -27,6 +27,7 @@ class ReviewBoard:
                         )
         urllib2.install_opener(self._opener)
         self._repositories = None
+        self._requests = None
 
     def login(self, username, password):
         self._api_post('/api/json/accounts/login/', {
@@ -40,6 +41,12 @@ class ReviewBoard:
             self._repositories = rsp['repositories']
         return self._repositories
 
+    def requests(self):
+        if not self._requests:
+            rsp = self._api_post('/api/json/reviewrequests/all/')
+            self._requests = rsp['review_requests']
+        return self._requests
+
     def users(self):
         rsp = self._api_post('/api/json/users/')
         self.users = rsp['users']
@@ -50,24 +57,31 @@ class ReviewBoard:
         for r in self.repositories():
             if r['id'] == int(repo_id):
                 repository_path = r['path']
+                break
         if not repository_path:
             raise ReviewBoardError, ("can't find repository with id: %s" % \
                                         repo_id)
 
         id = self._create_request(repository_path)
 
-        for field in fields:
-            if field == 'diff':
-                self._upload_diff(id, fields['diff'])
-            else:
-                self._set_request_field(id, field, fields[field])
+        self._set_fields(id, fields)
 
         self.save_draft(id)
 
         return id
 
     def update_request(self, id, fields={}):
-        pass
+        request_id = None
+        for r in self.requests():
+            if r['id'] == int(id):
+                request_id = int(id)
+                break
+        if not request_id:
+            raise ReviewBoardError, ("can't find request with id: %s" % id)
+
+        self._set_fields(request_id, fields)
+
+        return request_id
 
     def save_draft(self, id):
         rsp = self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
@@ -167,3 +181,10 @@ class ReviewBoard:
         data = {'path': {'filename': 'diff','content': diff}}
         rsp = self._api_post('/api/json/reviewrequests/%s/diff/new/' % \
                                 id, {}, data)
+
+    def _set_fields(self, id, fields={}):
+        for field in fields:
+            if field == 'diff':
+                self._upload_diff(id, fields['diff'])
+            else:
+                self._set_request_field(id, field, fields[field])
