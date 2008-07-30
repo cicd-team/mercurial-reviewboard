@@ -5,7 +5,7 @@ import cookielib
 import mimetools
 import urllib2
 import simplejson
-from urlparse import urljoin
+from urlparse import urljoin,urlparse
 
 class APIError(Exception):
     pass
@@ -15,7 +15,9 @@ class ReviewBoardError(Exception):
 
 class ReviewBoard:
     def __init__(self, url):
-        self.baseurl = url
+        parsed_url = urlparse(url)
+        self.baseurl    = "%s://%s" % (parsed_url[0], parsed_url[1])
+        self.path       = parsed_url[2]
         self._cj = cookielib.MozillaCookieJar()
         self._opener = opener = urllib2.build_opener(
                         urllib2.ProxyHandler(),
@@ -102,10 +104,7 @@ class ReviewBoard:
         """
         Performs an HTTP POST on the specified path.
         """
-        url = urljoin(self.baseurl, path)
-        if url[0:4] != 'http':
-            url = 'http://%s' % url
-
+        url = urljoin(self.baseurl, self.path + path)
         content_type, body = self._encode_multipart_formdata(fields, files)
         headers = {
             'Content-Type': content_type,
