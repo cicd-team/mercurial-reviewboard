@@ -86,7 +86,7 @@ def postreview(ui, repo, rev='tip', **opts):
         for r in repositories:
             ui.status('[%s] %s\n' % (r['id'], r['name']) )
         if len(repositories) > 1:
-            repo_id = ui.prompt('repository id:', '\d+')
+            repo_id = ui.prompt('repository id:', "[0-9]+", 0)
         else:
             repo_id = repositories[0]['id']
             ui.status('repository id: %s\n' % repo_id)
