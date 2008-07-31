@@ -8,7 +8,7 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-def postreview(ui, repo, rev, **opts):
+def postreview(ui, repo, rev='tip', **opts):
     '''post changeset to a reviewboard server'''
 
     server = ui.config('reviewboard', 'server')
@@ -50,7 +50,9 @@ def postreview(ui, repo, rev, **opts):
 
     reviewboard = ReviewBoard(server)
 
-    ui.status('login to %s\n' % server)
+    ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
+    ui.status('revieboard:\t%s\n' % server)
+    ui.status('\n')
     username = ui.config('reviewboard', 'user')
     if username:
         ui.status('username: %s\n' % username)
