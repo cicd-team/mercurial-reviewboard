@@ -68,8 +68,6 @@ class ReviewBoard:
 
         self._set_fields(id, fields)
 
-        self.save_draft(id)
-
         return id
 
     def update_request(self, id, fields={}):
@@ -85,7 +83,7 @@ class ReviewBoard:
 
         return request_id
 
-    def save_draft(self, id):
+    def _save_draft(self, id):
         rsp = self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
 
     def _api_post(self, url, fields=None, files=None):
@@ -184,8 +182,13 @@ class ReviewBoard:
                                 id, {}, data)
 
     def _set_fields(self, id, fields={}):
+        save_draft = False
         for field in fields:
-            if field == 'diff':
-                self._upload_diff(id, fields['diff'])
-            else:
+            if field != 'diff':
                 self._set_request_field(id, field, fields[field])
+                save_draft = True
+        if save_draft:
+            self._save_draft(id)
+        if fields['diff']:
+            self._upload_diff(id, fields['diff'])
+        
