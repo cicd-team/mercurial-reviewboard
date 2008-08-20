@@ -93,6 +93,8 @@ def postreview(ui, repo, rev='tip', **opts):
 
         try:
             request_id = reviewboard.new_request(repo_id, fields)
+            if opts.get('publish'):
+                reviewboard.publish(request_id)
         except ReviewBoardError, msg:
             raise util.Abort(_(msg))
 
@@ -101,12 +103,16 @@ def postreview(ui, repo, rev='tip', **opts):
     if not request_url.startswith('http'):
         request_url = 'http://%s' % request_url
 
-    ui.status('review request draft saved: %s\n' % request_url)
+    msg = 'review request draft saved: %s\n'
+    if opts.get('publish'):
+        msg = 'review request published: %s\n'
+    ui.status(msg % request_url)
 
 cmdtable = {
     "postreview":
         (postreview,
         [('r', 'requestid', '', _('request ID to update')),
+        ('p', 'publish', None, _('publish request immediately')),
         ],
          _('hg postreview [OPTION]... [REVISION]')),
 }

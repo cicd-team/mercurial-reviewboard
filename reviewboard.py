@@ -83,6 +83,9 @@ class ReviewBoard:
 
         return request_id
 
+    def publish(self, id):
+        self._api_post('api/json/reviewrequests/%s/publish/' % id)
+
     def _save_draft(self, id):
         rsp = self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
 
