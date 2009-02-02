@@ -1,7 +1,8 @@
 # reviewboard extension for mercurial
 
 import os, errno, re
-from mercurial import cmdutil, hg, ui, patch, util
+import cStringIO
+from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
 from mercurial import demandimport
 demandimport.disable()
@@ -16,26 +17,11 @@ def postreview(ui, repo, rev='tip', **opts):
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
 
-    def getdiff(repo, rev):
+    def getdiff(repo, r):
         '''return diff for the specified revision'''
-        patches = []
-
-        class exportee:
-            def __init__(self, container):
-                self.lines = []
-                self.container = container
-                self.name = 'memory'
-
-            def write(self, data):
-                self.lines.append(data)
-
-            def close(self):
-                self.container.append(''.join(self.lines).split('\n'))
-                self.lines = []
-
-        patch.export(repo, [rev], template=exportee(patches))
-
-        return '\n'.join(patches[0])
+        output = cStringIO.StringIO()
+        p = patch.export(repo, [r], fp=output, opts=mdiff.diffopts())
+        return output.getvalue()
 
     fields = {}
 
@@ -43,6 +29,7 @@ def postreview(ui, repo, rev='tip', **opts):
     fields['summary']       = c.description().splitlines()[0]
     fields['description']   = c.description()
     fields['diff']          = getdiff(repo, rev)
+
     for field in ('target_groups', 'target_people'):
         value = ui.config('reviewboard', field)
         if value:
