@@ -1,4 +1,56 @@
-# reviewboard extension for mercurial
+'''reviewboard extension for mercurial
+
+This extension adds a new command 'postreview' to post changesets for
+review to a reviewboard server.
+
+For more information about Review Board see: http://www.review-board.org/
+
+
+CONFIGURATION:
+
+Configure your .hgrc to enable the extension by adding following lines:
+
+--- ~/.hgrc ---
+[extensions]
+reviewboard = /path/to/reviewboard
+
+[reviewboard]
+# REQUIRED ITEMS:
+server          = http://reviewboard.example.com/
+
+# OPTIONAL ITEMS:
+# user            = ... # username for login
+# target_groups   = ... # default review groups
+# target_people   = ... # default review people
+--- ~/.hgrc ---
+
+
+USAGE:
+
+To post the tip changeset to the Review board server:
+
+$ hg postreview tip
+login to http://reviewboard.example.com
+username: ...
+password:
+Repositories:
+[1] Stuff
+[2] miscrepo
+repository id: 1
+review request draft saved: http://reviewboard.example.com/r/366/
+
+To update the review request ID 12 with the tip changeset:
+
+$ hg postreview -r 12 tip
+login to http://reviewboard.example.com
+username: ...
+password:
+review request draft saved: http://reviewboard.example.com/r/12/
+
+Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>
+'''
+
+
 
 import os, errno, re
 import cStringIO
