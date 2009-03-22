@@ -1,4 +1,4 @@
-# reviewboard extension for mercurial
+'''post changesets to a reviewboard server'''
 
 import os, errno, re
 import cStringIO
