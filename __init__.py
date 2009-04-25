@@ -17,18 +17,40 @@ def postreview(ui, repo, rev='tip', **opts):
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
 
-    def getdiff(repo, r):
+    def getdiff(ui, repo, r, parent):
         '''return diff for the specified revision'''
-        output = cStringIO.StringIO()
-        p = patch.export(repo, [r], fp=output, opts=mdiff.diffopts())
-        return output.getvalue()
+        output = ""
+        for chunk in patch.diff(repo, parent.node(), r.node()):
+            output += chunk
+        return output
+
+    parent = opts.get('parent')
+    if parent:
+        parent = repo[parent]
+    else:
+        parent = repo[rev].parents()[0]
+
+    rparent = remoteparent(ui, repo, rev)
+
+    ui.debug(_('Parent is %s\n' % parent))
+    ui.debug(_('Remote parent is %s\n' % rparent))
 
     fields = {}
 
     c                       = repo.changectx(rev)
     fields['summary']       = c.description().splitlines()[0]
     fields['description']   = c.description()
-    fields['diff']          = getdiff(repo, rev)
+
+    diff = getdiff(ui, repo, c, parent)
+    ui.debug('\n=== Diff from parent to rev ===\n')
+    ui.debug(diff + '\n')
+
+    if parent != rparent:
+        parentdiff = getdiff(ui, repo, parent, rparent)
+        ui.debug('\n=== Diff from rparent to parent ===\n')
+        ui.debug(parentdiff + '\n')
+    else:
+        parentdiff = ''
 
     for field in ('target_groups', 'target_people'):
         value = ui.config('reviewboard', field)
@@ -38,7 +60,7 @@ def postreview(ui, repo, rev='tip', **opts):
     reviewboard = ReviewBoard(server)
 
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
-    ui.status('revieboard:\t%s\n' % server)
+    ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = ui.config('reviewboard', 'user')
     if username:
@@ -57,7 +79,7 @@ def postreview(ui, repo, rev='tip', **opts):
     if opts.get('requestid'):
         request_id = opts.get('requestid')
         try:
-            reviewboard.update_request(request_id, fields)
+            reviewboard.update_request(request_id, fields, diff, parentdiff)
         except ReviewBoardError, msg:
             raise util.Abort(_(msg))
     else:
@@ -79,7 +101,7 @@ def postreview(ui, repo, rev='tip', **opts):
             ui.status('repository id: %s\n' % repo_id)
 
         try:
-            request_id = reviewboard.new_request(repo_id, fields)
+            request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
             if opts.get('publish'):
                 reviewboard.publish(request_id)
         except ReviewBoardError, msg:
@@ -95,11 +117,23 @@ def postreview(ui, repo, rev='tip', **opts):
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
+def remoteparent(ui, repo, rev):
+    remotepath = ui.expandpath('default-push', 'default')
+    remoterepo = hg.repository(ui, remotepath)
+    out = repo.findoutgoing(remoterepo)
+    ancestors = repo.changelog.ancestors([repo.lookup(rev)])
+    for o in out:
+        orev = repo[o]
+        a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
+        if a:
+            return orev.parents()[0]
+
 cmdtable = {
     "postreview":
         (postreview,
         [('r', 'requestid', '', _('request ID to update')),
         ('p', 'publish', None, _('publish request immediately')),
+        ('', 'parent', '', _('parent revision'))
         ],
          _('hg postreview [OPTION]... [REVISION]')),
 }
