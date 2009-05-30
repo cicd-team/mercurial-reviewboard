@@ -45,7 +45,7 @@ def postreview(ui, repo, rev='tip', **opts):
     ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
 
-    if parent != rparent:
+    if rparent and parent != rparent:
         parentdiff = getdiff(ui, repo, parent, rparent)
         ui.debug('\n=== Diff from rparent to parent ===\n')
         ui.debug(parentdiff + '\n')
@@ -76,8 +76,8 @@ def postreview(ui, repo, rev='tip', **opts):
 
     request_id = False
 
-    if opts.get('requestid'):
-        request_id = opts.get('requestid')
+    if opts.get('existing'):
+        request_id = opts.get('existing')
         try:
             reviewboard.update_request(request_id, fields, diff, parentdiff)
         except ReviewBoardError, msg:
@@ -131,9 +131,9 @@ def remoteparent(ui, repo, rev):
 cmdtable = {
     "postreview":
         (postreview,
-        [('r', 'requestid', '', _('request ID to update')),
+        [('e', 'existing', '', _('existing request ID to update')),
         ('p', 'publish', None, _('publish request immediately')),
-        ('', 'parent', '', _('parent revision'))
+        ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
          _('hg postreview [OPTION]... [REVISION]')),
 }
