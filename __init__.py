@@ -35,11 +35,20 @@ def postreview(ui, repo, rev='tip', **opts):
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
 
+    request_id = None
+
+    if opts.get('existing'):
+        request_id = opts.get('existing')
+
     fields = {}
 
-    c                       = repo.changectx(rev)
-    fields['summary']       = c.description().splitlines()[0]
-    fields['description']   = c.description()
+    c = repo.changectx(rev)
+
+    # Don't clobber the summary and description for an existing request
+    # unless specifically asked for    
+    if opts.get('update') or not request_id:
+        fields['summary']       = c.description().splitlines()[0]
+        fields['description']   = c.description()
 
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
@@ -74,10 +83,7 @@ def postreview(ui, repo, rev='tip', **opts):
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
 
-    request_id = False
-
-    if opts.get('existing'):
-        request_id = opts.get('existing')
+    if request_id:
         try:
             reviewboard.update_request(request_id, fields, diff, parentdiff)
         except ReviewBoardError, msg:
@@ -132,6 +138,7 @@ cmdtable = {
     "postreview":
         (postreview,
         [('e', 'existing', '', _('existing request ID to update')),
+        ('u', 'update', '', _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
