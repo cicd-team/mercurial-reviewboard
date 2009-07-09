@@ -70,10 +70,12 @@ def postreview(ui, repo, rev='tip', **opts):
             raise util.Abort(_('no repositories configured at %s' % server))
 
         ui.status('Repositories:\n')
+        repo_choice = []
         for r in repositories:
             ui.status('[%s] %s\n' % (r['id'], r['name']) )
+            repo_choice.append('&'+str(r['id']))
         if len(repositories) > 1:
-            repo_id = ui.prompt('repository id:', "[0-9]+", 0)
+            repo_id = ui.prompt('repository id:', repo_choice, 0)
         else:
             repo_id = repositories[0]['id']
             ui.status('repository id: %s\n' % repo_id)
