@@ -1,4 +1,4 @@
-# reviewboard extension for mercurial
+'''integration with Review Board'''
 
 import os, errno, re
 import cStringIO
@@ -10,7 +10,25 @@ demandimport.disable()
 from reviewboard import ReviewBoard, ReviewBoardError
 
 def postreview(ui, repo, rev='tip', **opts):
-    '''post changeset to a reviewboard server'''
+    '''post a changeset to a Review Board server
+
+This command creates a new review request on a Review Board server, or updates
+an existing review request, based on a changeset in the repository. If no
+revision number is specified the tip revision is used.
+
+By default, the diff uploaded to the server is based on the parent of the
+revision to be reviewed. A different parent may be specified using the
+--parent option.
+
+If the parent revision is not available to the Review Board server (e.g. it
+exists in your local repository but not in the one that Review Board has
+access to) you must tell postreview how to determine the base revision
+to use for a parent diff. The --outgoing, --outgoingrepo or --master options
+may be used for this purpose. The --outgoing option is the simplest of these;
+it assumes that the upstream repository specified in .hg/hgrc is the same as
+the one known to Review Board. The other two options offer more control if
+this is not the case.
+'''
 
     server = ui.config('reviewboard', 'server')
     if not server:
