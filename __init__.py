@@ -30,7 +30,22 @@ def postreview(ui, repo, rev='tip', **opts):
     else:
         parent = repo[rev].parents()[0]
 
-    rparent = remoteparent(ui, repo, rev)
+    outgoing = opts.get('outgoing')
+    outgoingrepo = opts.get('outgoingrepo')
+    master = opts.get('master')
+
+    if int(outgoing) + int(bool(outgoingrepo)) + int(bool(master)) > 1:
+        raise util.Abort(_('can only specify one of outgoing, outgoingrepo, '
+                           'master'))
+
+    if outgoing:
+        rparent = remoteparent(ui, repo, rev)
+    elif outgoingrepo:
+        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+    elif master:
+        rparent = repo[master]
+    else:
+        rparent = None
 
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
@@ -127,8 +142,11 @@ def postreview(ui, repo, rev='tip', **opts):
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
-def remoteparent(ui, repo, rev):
-    remotepath = ui.expandpath('default-push', 'default')
+def remoteparent(ui, repo, rev, upstream=None):
+    if upstream:
+        remotepath = ui.expandpath(upstream)
+    else:
+        remotepath = ui.expandpath('default-push', 'default')
     remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
     ancestors = repo.changelog.ancestors([repo.lookup(rev)])
@@ -141,10 +159,17 @@ def remoteparent(ui, repo, rev):
 cmdtable = {
     "postreview":
         (postreview,
-        [('e', 'existing', '', _('existing request ID to update')),
-        ('u', 'update', '', _('update the fields of an existing request')),
+        [
+        ('o', 'outgoing', False,
+         _('use upstream repository to determine the parent diff base')),
+        ('O', 'outgoingrepo', '',
+         _('use specified repository to determine the parent diff base')),
+        ('m', 'master', '',
+         _('use specified revision as the parent diff base')),
+        ('e', 'existing', '', _('existing request ID to update')),
+        ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
-         _('hg postreview [OPTION]... [REVISION]')),
+        _('hg postreview [OPTION]... [REVISION]')),
 }
