@@ -52,16 +52,12 @@ this is not the case.
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
 
-    if int(outgoing) + int(bool(outgoingrepo)) + int(bool(master)) > 1:
-        raise util.Abort(_('can only specify one of outgoing, outgoingrepo, '
-                           'master'))
-
-    if outgoing:
-        rparent = remoteparent(ui, repo, rev)
+    if master:
+        rparent = repo[master]
     elif outgoingrepo:
         rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
-    elif master:
-        rparent = repo[master]
+    elif outgoing:
+        rparent = remoteparent(ui, repo, rev)
     else:
         rparent = None
 
