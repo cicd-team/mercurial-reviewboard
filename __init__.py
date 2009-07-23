@@ -127,18 +127,20 @@ this is not the case.
             raise util.Abort(_('no repositories configured at %s' % server))
 
         ui.status('Repositories:\n')
-        repo_choice = []
+        repo_ids = set()
         for r in repositories:
             ui.status('[%s] %s\n' % (r['id'], r['name']) )
-            repo_choice.append('&'+str(r['id']))
+            repo_ids.add(str(r['id']))
         if len(repositories) > 1:
-            repo_id = ui.prompt('repository id:', repo_choice, 0)
+            repo_id = ui.prompt('repository id:', 0)
+            if not repo_id in repo_ids:
+                raise util.Abort(_('invalid repository ID: %s') % repo_id)
         else:
             repo_id = repositories[0]['id']
             ui.status('repository id: %s\n' % repo_id)
 
         try:
-            request_id = reviewboard.new_request(repo_id, fields)
+            request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
             if opts.get('publish'):
                 reviewboard.publish(request_id)
         except ReviewBoardError, msg:
