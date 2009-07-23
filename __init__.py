@@ -10,25 +10,85 @@ demandimport.disable()
 from reviewboard import ReviewBoard, ReviewBoardError
 
 def postreview(ui, repo, rev='tip', **opts):
-    '''post changeset to a reviewboard server'''
+    '''post a changeset to a Review Board server
+
+This command creates a new review request on a Review Board server, or updates
+an existing review request, based on a changeset in the repository. If no
+revision number is specified the tip revision is used.
+
+By default, the diff uploaded to the server is based on the parent of the
+revision to be reviewed. A different parent may be specified using the
+--parent option.
+
+If the parent revision is not available to the Review Board server (e.g. it
+exists in your local repository but not in the one that Review Board has
+access to) you must tell postreview how to determine the base revision
+to use for a parent diff. The --outgoing, --outgoingrepo or --master options
+may be used for this purpose. The --outgoing option is the simplest of these;
+it assumes that the upstream repository specified in .hg/hgrc is the same as
+the one known to Review Board. The other two options offer more control if
+this is not the case.
+'''
 
     server = ui.config('reviewboard', 'server')
     if not server:
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
 
-    def getdiff(repo, r):
+    def getdiff(ui, repo, r, parent):
         '''return diff for the specified revision'''
-        output = cStringIO.StringIO()
-        p = patch.export(repo, [r], fp=output, opts=mdiff.diffopts())
-        return output.getvalue()
+        output = ""
+        for chunk in patch.diff(repo, parent.node(), r.node()):
+            output += chunk
+        return output
+
+    parent = opts.get('parent')
+    if parent:
+        parent = repo[parent]
+    else:
+        parent = repo[rev].parents()[0]
+
+    outgoing = opts.get('outgoing')
+    outgoingrepo = opts.get('outgoingrepo')
+    master = opts.get('master')
+
+    if master:
+        rparent = repo[master]
+    elif outgoingrepo:
+        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+    elif outgoing:
+        rparent = remoteparent(ui, repo, rev)
+    else:
+        rparent = None
+
+    ui.debug(_('Parent is %s\n' % parent))
+    ui.debug(_('Remote parent is %s\n' % rparent))
+
+    request_id = None
+
+    if opts.get('existing'):
+        request_id = opts.get('existing')
 
     fields = {}
 
-    c                       = repo.changectx(rev)
-    fields['summary']       = c.description().splitlines()[0]
-    fields['description']   = c.description()
-    fields['diff']          = getdiff(repo, rev)
+    c = repo.changectx(rev)
+
+    # Don't clobber the summary and description for an existing request
+    # unless specifically asked for    
+    if opts.get('update') or not request_id:
+        fields['summary']       = c.description().splitlines()[0]
+        fields['description']   = c.description()
+
+    diff = getdiff(ui, repo, c, parent)
+    ui.debug('\n=== Diff from parent to rev ===\n')
+    ui.debug(diff + '\n')
+
+    if rparent and parent != rparent:
+        parentdiff = getdiff(ui, repo, parent, rparent)
+        ui.debug('\n=== Diff from rparent to parent ===\n')
+        ui.debug(parentdiff + '\n')
+    else:
+        parentdiff = ''
 
     for field in ('target_groups', 'target_people'):
         value = ui.config('reviewboard', field)
@@ -38,7 +98,7 @@ def postreview(ui, repo, rev='tip', **opts):
     reviewboard = ReviewBoard(server)
 
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
-    ui.status('revieboard:\t%s\n' % server)
+    ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = ui.config('reviewboard', 'user')
     if username:
@@ -52,12 +112,9 @@ def postreview(ui, repo, rev='tip', **opts):
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
 
-    request_id = False
-
-    if opts.get('requestid'):
-        request_id = opts.get('requestid')
+    if request_id:
         try:
-            reviewboard.update_request(request_id, fields)
+            reviewboard.update_request(request_id, fields, diff, parentdiff)
         except ReviewBoardError, msg:
             raise util.Abort(_(msg))
     else:
@@ -97,11 +154,34 @@ def postreview(ui, repo, rev='tip', **opts):
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
+def remoteparent(ui, repo, rev, upstream=None):
+    if upstream:
+        remotepath = ui.expandpath(upstream)
+    else:
+        remotepath = ui.expandpath('default-push', 'default')
+    remoterepo = hg.repository(ui, remotepath)
+    out = repo.findoutgoing(remoterepo)
+    ancestors = repo.changelog.ancestors([repo.lookup(rev)])
+    for o in out:
+        orev = repo[o]
+        a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
+        if a:
+            return orev.parents()[0]
+
 cmdtable = {
     "postreview":
         (postreview,
-        [('r', 'requestid', '', _('request ID to update')),
+        [
+        ('o', 'outgoing', False,
+         _('use upstream repository to determine the parent diff base')),
+        ('O', 'outgoingrepo', '',
+         _('use specified repository to determine the parent diff base')),
+        ('m', 'master', '',
+         _('use specified revision as the parent diff base')),
+        ('e', 'existing', '', _('existing request ID to update')),
+        ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
+        ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
-         _('hg postreview [OPTION]... [REVISION]')),
+        _('hg postreview [OPTION]... [REVISION]')),
 }

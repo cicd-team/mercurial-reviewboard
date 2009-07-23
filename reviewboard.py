@@ -54,7 +54,7 @@ class ReviewBoard:
         self.users = rsp['users']
         return self.users
 
-    def new_request(self, repo_id, fields={}):
+    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
         repository_path = None
         for r in self.repositories():
             if r['id'] == int(repo_id):
@@ -66,11 +66,11 @@ class ReviewBoard:
 
         id = self._create_request(repository_path)
 
-        self._set_fields(id, fields)
+        self._set_request_details(id, fields, diff, parentdiff)
 
         return id
 
-    def update_request(self, id, fields={}):
+    def update_request(self, id, fields={}, diff='', parentdiff=''):
         request_id = None
         for r in self.requests():
             if r['id'] == int(id):
@@ -79,7 +79,7 @@ class ReviewBoard:
         if not request_id:
             raise ReviewBoardError, ("can't find request with id: %s" % id)
 
-        self._set_fields(request_id, fields)
+        self._set_request_details(request_id, fields, diff, parentdiff)
 
         return request_id
 
@@ -179,19 +179,21 @@ class ReviewBoard:
         self._api_post('/api/json/reviewrequests/%s/draft/set/' %
                                 id, { field: value })
 
-    def _upload_diff(self, id, diff):
-        data = {'path': {'filename': 'diff','content': diff}}
+    def _upload_diff(self, id, diff, parentdiff=""):
+        data = {'path': {'filename': 'diff', 'content': diff}}
+        if parentdiff:
+            data['parent_diff_path'] = \
+                {'filename': 'parent_diff', 'content': parentdiff}
         rsp = self._api_post('/api/json/reviewrequests/%s/diff/new/' % \
                                 id, {}, data)
 
     def _set_fields(self, id, fields={}):
-        save_draft = False
         for field in fields:
-            if field != 'diff':
-                self._set_request_field(id, field, fields[field])
-                save_draft = True
-        if save_draft:
+            self._set_request_field(id, field, fields[field])
+
+    def _set_request_details(self, id, fields, diff, parentdiff):
+        self._set_fields(id, fields)
+        if diff:
+            self._upload_diff(id, diff, parentdiff)
+        if fields or diff:
             self._save_draft(id)
-        if fields['diff']:
-            self._upload_diff(id, fields['diff'])
-        
