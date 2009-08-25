@@ -75,15 +75,17 @@ this is not the case.
 
     fields = {}
 
-    c = repo.changectx(rev2)
+    c1 = repo.changectx(rev1)
+    c2 = repo.changectx(rev2)
+    all_contexts = _find_contexts(c1, c2)
 
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
     if opts.get('update') or not request_id:
-        fields['summary']       = c.description().splitlines()[0]
-        fields['description']   = c.description()
+        fields['summary']       = c2.description().splitlines()[0]
+        fields['description']   = _create_description(all_contexts)
 
-    diff = getdiff(ui, repo, c, parent)
+    diff = getdiff(ui, repo, c2, parent)
     ui.debug('\n=== Diff from parent to rev2 ===\n')
     ui.debug(diff + '\n')
 
@@ -102,7 +104,10 @@ this is not the case.
     reviewboard = ReviewBoard(server)
 
     # TODO: add all changesets
-    ui.status('changeset:\t%s:%s "%s"\n' % (rev2, c, c.description()) )
+    ui.status('changesets:\n')
+    for ctx in all_contexts:
+        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))
+        
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = ui.config('reviewboard', 'user')
@@ -174,6 +179,26 @@ def remoteparent(ui, repo, rev, upstream=None):
         a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
         if a:
             return orev.parents()[0]
+        
+def _find_contexts(ctx1, ctx2):
+    contexts = []
+    contexts.append(ctx2)
+    if ctx1.rev == ctx2.rev:
+        return contexts
+    def append_ancestors(ancestors):
+        ancestor = ancestors.next()
+        contexts.insert(0, ancestor)
+        if ancestor.rev == ctx1.rev:
+            return
+        append_ancestors(ancestors)
+    append_ancestors(ctx2.ancestors())
+    return contexts
+
+def _create_description(contexts):
+    description = ''
+    for context in contexts:
+        description += "-- %s\n" % context.description()
+    return description
 
 cmdtable = {
     "postreview":
