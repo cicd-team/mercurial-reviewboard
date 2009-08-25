@@ -77,7 +77,7 @@ this is not the case.
 
     c1 = repo.changectx(rev1)
     c2 = repo.changectx(rev2)
-    all_contexts = _find_contexts(c1, c2)
+    all_contexts = _find_contexts(repo, c1, c2)
 
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
@@ -180,18 +180,10 @@ def remoteparent(ui, repo, rev, upstream=None):
         if a:
             return orev.parents()[0]
         
-def _find_contexts(ctx1, ctx2):
+def _find_contexts(repo, ctx1, ctx2):
     contexts = []
-    contexts.append(ctx2)
-    if ctx1.rev == ctx2.rev:
-        return contexts
-    def append_ancestors(ancestors):
-        ancestor = ancestors.next()
-        contexts.insert(0, ancestor)
-        if ancestor.rev == ctx1.rev:
-            return
-        append_ancestors(ancestors)
-    append_ancestors(ctx2.ancestors())
+    for node in repo.changelog.nodesbetween([ctx1.node()],[ctx2.node()])[0]:
+        contexts.append(repo[node])
     return contexts
 
 def _create_description(contexts):
