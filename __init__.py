@@ -71,9 +71,7 @@ this is not the case.
 
     if master:
         rparent = repo[master]
-    elif outgoingrepo:
-        rparent = remoteparent(ui, repo, rev1, rrepo)
-    elif outgoing:
+    elif outgoingrepo or outgoing:
         rparent = remoteparent(ui, repo, rev1, rrepo)
     else:
         rparent = None
