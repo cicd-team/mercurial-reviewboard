@@ -29,10 +29,27 @@ it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
 this is not the case.
 '''
+
+    outgoing = opts.get('outgoing')
+    outgoingrepo = opts.get('outgoingrepo')
+    master = opts.get('master')
+    
+    if outgoingrepo:
+        rrepo = remoterepo(ui, outgoingrepo)
+    else:
+        rrepo = remoterepo(ui)
+
     if rev.find(':') != -1:
         rev1, rev2 = rev.split(':')
+    elif rev == 'outgoing':
+        ui.status('inferring revision range from outgoing changes\n')
+        out = repo.findoutgoing(rrepo)
+        out = repo.changelog.nodesbetween(out, [repo.changectx('tip').node()])[0]
+        rev1 = repo[out[0]].rev()
+        rev2 = repo[out[-1]].rev()
     else:
-        rev1, rev2 = (rev, rev)
+        rev1 = rev
+        rev2 = rev
 
     server = ui.config('reviewboard', 'server')
     if not server:
@@ -52,16 +69,12 @@ this is not the case.
     else:
         parent = repo[rev1].parents()[0]
 
-    outgoing = opts.get('outgoing')
-    outgoingrepo = opts.get('outgoingrepo')
-    master = opts.get('master')
-
     if master:
         rparent = repo[master]
     elif outgoingrepo:
-        rparent = remoteparent(ui, repo, rev1, upstream=outgoingrepo)
+        rparent = remoteparent(ui, repo, rev1, rrepo)
     elif outgoing:
-        rparent = remoteparent(ui, repo, rev1)
+        rparent = remoteparent(ui, repo, rev1, rrepo)
     else:
         rparent = None
 
@@ -166,12 +179,15 @@ this is not the case.
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
-def remoteparent(ui, repo, rev, upstream=None):
+def remoterepo(ui, upstream=None):
     if upstream:
         remotepath = ui.expandpath(upstream)
     else:
         remotepath = ui.expandpath('default-push', 'default')
-    remoterepo = hg.repository(ui, remotepath)
+    rrepo = hg.repository(ui, remotepath)
+    return rrepo
+
+def remoteparent(ui, repo, rev, remoterepo):
     out = repo.findoutgoing(remoterepo)
     ancestors = repo.changelog.ancestors([repo.lookup(rev)])
     for o in out:
