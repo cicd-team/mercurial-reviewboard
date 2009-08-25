@@ -40,7 +40,10 @@ this is not the case.
         rrepo = remoterepo(ui)
 
     if rev.find(':') != -1:
-        rev1, rev2 = rev.split(':')
+        # we accept the standard range format, where the lower bound is 
+        # exclusive, and translate it to the first included revision (rev1)
+        lower_bound, rev2 = rev.split(':')
+        rev1 = repo.changectx(lower_bound).rev() + 1
     elif rev == 'outgoing':
         ui.status('inferring revision range from outgoing changes\n')
         out = repo.findoutgoing(rrepo)
