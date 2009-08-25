@@ -29,6 +29,10 @@ it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
 this is not the case.
 '''
+    if rev.find(':') != -1:
+        rev1, rev2 = rev.split(':')
+    else:
+        rev1, rev2 = (rev, rev)
 
     server = ui.config('reviewboard', 'server')
     if not server:
@@ -46,7 +50,7 @@ this is not the case.
     if parent:
         parent = repo[parent]
     else:
-        parent = repo[rev].parents()[0]
+        parent = repo[rev1].parents()[0]
 
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
@@ -55,9 +59,9 @@ this is not the case.
     if master:
         rparent = repo[master]
     elif outgoingrepo:
-        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+        rparent = remoteparent(ui, repo, rev1, upstream=outgoingrepo)
     elif outgoing:
-        rparent = remoteparent(ui, repo, rev)
+        rparent = remoteparent(ui, repo, rev1)
     else:
         rparent = None
 
@@ -71,7 +75,7 @@ this is not the case.
 
     fields = {}
 
-    c = repo.changectx(rev)
+    c = repo.changectx(rev2)
 
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
@@ -80,7 +84,7 @@ this is not the case.
         fields['description']   = c.description()
 
     diff = getdiff(ui, repo, c, parent)
-    ui.debug('\n=== Diff from parent to rev ===\n')
+    ui.debug('\n=== Diff from parent to rev2 ===\n')
     ui.debug(diff + '\n')
 
     if rparent and parent != rparent:
@@ -97,7 +101,8 @@ this is not the case.
 
     reviewboard = ReviewBoard(server)
 
-    ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
+    # TODO: add all changesets
+    ui.status('changeset:\t%s:%s "%s"\n' % (rev2, c, c.description()) )
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = ui.config('reviewboard', 'user')
