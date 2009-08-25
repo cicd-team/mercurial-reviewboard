@@ -13,8 +13,10 @@ def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
 
 This command creates a new review request on a Review Board server, or updates
-an existing review request, based on a changeset in the repository. If no
-revision number is specified the tip revision is used.
+an existing review request, based on a changeset or range of changesets in the 
+repository. If no revision numbers are specified the tip revision is used.
+As an alternative to changesets, the outgoing changesets can be calculated 
+automatically by passing in the token "outgoing".
 
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the
@@ -224,5 +226,5 @@ cmdtable = {
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
-        _('hg postreview [OPTION]... [REVISION]')),
+        _('hg postreview [OPTION]... [REVISION[:REVISION] | "outgoing"]')),
 }
