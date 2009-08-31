@@ -4,8 +4,6 @@ import os, errno, re
 import cStringIO
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
-from mercurial import demandimport
-demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
