@@ -50,6 +50,9 @@ this is not the case.
         ui.status('inferring revision range from outgoing changes\n')
         out = repo.findoutgoing(rrepo)
         out = repo.changelog.nodesbetween(out, [repo.changectx('tip').node()])[0]
+        if len(out) == 0:
+            ui.status('there are no outgoing changes\n')
+            return
         rev1 = repo[out[0]].rev()
         rev2 = repo[out[-1]].rev()
     else:
