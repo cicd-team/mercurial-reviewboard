@@ -13,10 +13,8 @@ def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
 
 This command creates a new review request on a Review Board server, or updates
-an existing review request, based on a changeset or range of changesets in the 
-repository. If no revision numbers are specified the tip revision is used.
-As an alternative to changesets, the outgoing changesets can be calculated 
-automatically by passing in the token "outgoing".
+an existing review request, based on a changeset in the repository. If no
+revision number is specified the tip revision is used.
 
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the
@@ -31,33 +29,6 @@ it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
 this is not the case.
 '''
-
-    outgoing = opts.get('outgoing')
-    outgoingrepo = opts.get('outgoingrepo')
-    master = opts.get('master')
-    
-    if outgoingrepo:
-        rrepo = remoterepo(ui, outgoingrepo)
-    else:
-        rrepo = remoterepo(ui)
-
-    if rev.find(':') != -1:
-        # we accept the standard range format, where the lower bound is 
-        # exclusive, and translate it to the first included revision (rev1)
-        lower_bound, rev2 = rev.split(':')
-        rev1 = repo.changectx(lower_bound).rev() + 1
-    elif rev == 'outgoing':
-        ui.status('inferring revision range from outgoing changes\n')
-        out = repo.findoutgoing(rrepo)
-        out = repo.changelog.nodesbetween(out, [repo.changectx('tip').node()])[0]
-        if len(out) == 0:
-            ui.status('there are no outgoing changes\n')
-            return
-        rev1 = repo[out[0]].rev()
-        rev2 = repo[out[-1]].rev()
-    else:
-        rev1 = rev
-        rev2 = rev
 
     server = ui.config('reviewboard', 'server')
     if not server:
@@ -75,12 +46,18 @@ this is not the case.
     if parent:
         parent = repo[parent]
     else:
-        parent = repo[rev1].parents()[0]
+        parent = repo[rev].parents()[0]
+
+    outgoing = opts.get('outgoing')
+    outgoingrepo = opts.get('outgoingrepo')
+    master = opts.get('master')
 
     if master:
         rparent = repo[master]
-    elif outgoingrepo or outgoing:
-        rparent = remoteparent(ui, repo, rev1, rrepo)
+    elif outgoingrepo:
+        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+    elif outgoing:
+        rparent = remoteparent(ui, repo, rev)
     else:
         rparent = None
 
@@ -94,18 +71,17 @@ this is not the case.
 
     fields = {}
 
-    c1 = repo.changectx(rev1)
-    c2 = repo.changectx(rev2)
-    all_contexts = _find_contexts(repo, c1, c2)
+    c = repo.changectx(rev)
+    all_contexts = _find_contexts(repo, parent, c)
 
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
     if opts.get('update') or not request_id:
-        fields['summary']       = c2.description().splitlines()[0]
+        fields['summary']       = c.description().splitlines()[0]
         fields['description']   = _create_description(all_contexts)
 
-    diff = getdiff(ui, repo, c2, parent)
-    ui.debug('\n=== Diff from parent to rev2 ===\n')
+    diff = getdiff(ui, repo, c, parent)
+    ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
 
     if rparent and parent != rparent:
@@ -122,11 +98,9 @@ this is not the case.
 
     reviewboard = ReviewBoard(server)
 
-    # TODO: add all changesets
     ui.status('changesets:\n')
     for ctx in all_contexts:
         ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))
-        
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = ui.config('reviewboard', 'user')
@@ -185,15 +159,12 @@ this is not the case.
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
-def remoterepo(ui, upstream=None):
+def remoteparent(ui, repo, rev, upstream=None):
     if upstream:
         remotepath = ui.expandpath(upstream)
     else:
         remotepath = ui.expandpath('default-push', 'default')
-    rrepo = hg.repository(ui, remotepath)
-    return rrepo
-
-def remoteparent(ui, repo, rev, remoterepo):
+    remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
     ancestors = repo.changelog.ancestors([repo.lookup(rev)])
     for o in out:
@@ -202,11 +173,12 @@ def remoteparent(ui, repo, rev, remoterepo):
         if a:
             return orev.parents()[0]
         
-def _find_contexts(repo, ctx1, ctx2):
+def _find_contexts(repo, parentctx, ctx):
+    'Find all context between the contexts, excluding the parent context.'
     contexts = []
-    for node in repo.changelog.nodesbetween([ctx1.node()],[ctx2.node()])[0]:
+    for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
         contexts.append(repo[node])
-    return contexts
+    return contexts[1:]
 
 def _create_description(contexts):
     description = ''
@@ -229,5 +201,5 @@ cmdtable = {
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff'))
         ],
-        _('hg postreview [OPTION]... [REVISION[:REVISION] | "outgoing"]')),
+        _('hg postreview [OPTION]... [REVISION]')),
 }
