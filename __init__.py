@@ -18,7 +18,8 @@ revision number is specified the tip revision is used.
 
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the
---parent option.
+--parent option.  Alternatively you may specify --outgoingchanges to calculate
+the parent based on the outgoing changesets.
 
 If the parent revision is not available to the Review Board server (e.g. it
 exists in your local repository but not in the one that Review Board has
@@ -42,12 +43,6 @@ this is not the case.
             output += chunk
         return output
 
-    parent = opts.get('parent')
-    if parent:
-        parent = repo[parent]
-    else:
-        parent = repo[rev].parents()[0]
-
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
@@ -61,6 +56,22 @@ this is not the case.
     else:
         rparent = None
 
+    c = repo.changectx(rev)
+        
+    parent = opts.get('parent')
+    outgoingchanges = opts.get('outgoingchanges')
+
+    if parent and outgoingchanges:
+        raise util.Abort(_(
+           "you cannot supply both the --parent and --outgoingchanges options"))
+    elif outgoingchanges:
+        parent = _findoutgoingparent(ui, repo, outgoingrepo, c)
+    elif parent:
+        parent = repo[parent]
+        print parent
+    else:
+        parent = repo[rev].parents()[0]
+
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
 
@@ -71,7 +82,6 @@ this is not the case.
 
     fields = {}
 
-    c = repo.changectx(rev)
     all_contexts = _find_contexts(repo, parent, c)
 
     # Don't clobber the summary and description for an existing request
@@ -186,6 +196,32 @@ def _create_description(contexts):
         description += "-- %s\n" % context.description()
     return description
 
+def _remoterepo(ui, upstream=None):
+    if upstream:
+        remotepath = ui.expandpath(upstream)
+    else:
+        remotepath = ui.expandpath('default-push', 'default')
+    rrepo = hg.repository(ui, remotepath)
+    return rrepo
+
+def _filternodelist(nodelist, repo, ctx):
+    index = nodelist.index(ctx.node())
+    nodelist = nodelist[0:index]
+    return nodelist
+
+def _findoutgoingparent(ui, repo, outgoingrepo, c   ):
+    if outgoingrepo:
+        rrepo = _remoterepo(ui, outgoingrepo)
+    else:
+        rrepo = _remoterepo(ui)
+    firstoutgoingnode = repo.findoutgoing(rrepo)[0]
+    firstoutgoingctx = repo[firstoutgoingnode];
+    firstctx = c
+    while firstctx.parents()[0].rev() >= firstoutgoingctx.rev():
+        firstctx = firstctx.parents()[0]
+    parent = firstctx.parents()[0]
+    return parent
+
 cmdtable = {
     "postreview":
         (postreview,
@@ -199,7 +235,8 @@ cmdtable = {
         ('e', 'existing', '', _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
-        ('', 'parent', '', _('parent revision for the uploaded diff'))
+        ('', 'parent', '', _('parent revision for the uploaded diff')),
+        ('g', 'outgoingchanges', False, _('create diff with all outgoing changes'))
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
