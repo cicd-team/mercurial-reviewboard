@@ -65,7 +65,7 @@ this is not the case.
         raise util.Abort(_(
            "you cannot supply both the --parent and --outgoingchanges options"))
     elif outgoingchanges:
-        parent = _findoutgoingparent(ui, repo, outgoingrepo, c)
+        parent = rparent
     elif parent:
         parent = repo[parent]
     else:
@@ -175,7 +175,6 @@ def remoteparent(ui, repo, rev, upstream=None):
         remotepath = ui.expandpath('default-push', 'default')
     remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
-    ancestors = repo.changelog.ancestors([repo.lookup(rev)])
     for o in out:
         orev = repo[o]
         a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
@@ -194,27 +193,6 @@ def _create_description(contexts):
     for context in contexts:
         description += "-- %s\n" % context.description()
     return description
-
-def _remoterepo(ui, upstream=None):
-    if upstream:
-        remotepath = ui.expandpath(upstream)
-    else:
-        remotepath = ui.expandpath('default-push', 'default')
-    rrepo = hg.repository(ui, remotepath)
-    return rrepo
-
-def _findoutgoingparent(ui, repo, outgoingrepo, c   ):
-    if outgoingrepo:
-        rrepo = _remoterepo(ui, outgoingrepo)
-    else:
-        rrepo = _remoterepo(ui)
-    firstoutgoingnode = repo.findoutgoing(rrepo)[0]
-    firstoutgoingctx = repo[firstoutgoingnode];
-    firstctx = c
-    while firstctx.parents()[0].rev() >= firstoutgoingctx.rev():
-        firstctx = firstctx.parents()[0]
-    parent = firstctx.parents()[0]
-    return parent
 
 cmdtable = {
     "postreview":
