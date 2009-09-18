@@ -68,7 +68,6 @@ this is not the case.
         parent = _findoutgoingparent(ui, repo, outgoingrepo, c)
     elif parent:
         parent = repo[parent]
-        print parent
     else:
         parent = repo[rev].parents()[0]
 
