@@ -204,11 +204,6 @@ def _remoterepo(ui, upstream=None):
     rrepo = hg.repository(ui, remotepath)
     return rrepo
 
-def _filternodelist(nodelist, repo, ctx):
-    index = nodelist.index(ctx.node())
-    nodelist = nodelist[0:index]
-    return nodelist
-
 def _findoutgoingparent(ui, repo, outgoingrepo, c   ):
     if outgoingrepo:
         rrepo = _remoterepo(ui, outgoingrepo)
