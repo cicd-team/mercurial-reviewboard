@@ -1,4 +1,4 @@
-  reviewboard extension for mercurial
+reviewboard extension for mercurial
 
 This extension adds a new command 'postreview' to post changesets for
 review to a reviewboard server.
@@ -47,12 +47,8 @@ username: ...
 password:
 review request draft saved: http://reviewboard.example.com/r/12/
 
-To post changes 9-12:
-
-$ hg postreview 8:12
-
 To post all changes not present in the parent repository:
 
-$ hg postreview outgoing
+$ hg postreview -o -g
 
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>
