@@ -51,4 +51,8 @@ To post all changes not present in the parent repository:
 
 $ hg postreview -o -g
 
+To post all changes on branch "my_branch":
+
+$ hg postreview -b my_branch
+
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>

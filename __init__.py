@@ -19,7 +19,8 @@ revision number is specified the tip revision is used.
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the
 --parent option.  Alternatively you may specify --outgoingchanges to calculate
-the parent based on the outgoing changesets.
+the parent based on the outgoing changesets or --branch to choose the parent
+revision of the branch.
 
 If the parent revision is not available to the Review Board server (e.g. it
 exists in your local repository but not in the one that Review Board has
@@ -60,14 +61,16 @@ this is not the case.
         
     parent = opts.get('parent')
     outgoingchanges = opts.get('outgoingchanges')
+    branch = opts.get('branch')
 
-    if parent and outgoingchanges:
-        raise util.Abort(_(
-           "you cannot supply both the --parent and --outgoingchanges options"))
-    elif outgoingchanges:
+    _check_parent_options(parent, outgoingchanges, branch)
+    
+    if outgoingchanges:
         parent = rparent
     elif parent:
         parent = repo[parent]
+    elif branch:
+        parent = _find_branch_parent(ui, c)
     else:
         parent = repo[rev].parents()[0]
 
@@ -180,7 +183,31 @@ def remoteparent(ui, repo, rev, upstream=None):
         a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
         if a:
             return orev.parents()[0]
+
+def _check_parent_options(parent, outgoingchanges, branch):
+    usep = bool(parent)
+    useg = bool(outgoingchanges)
+    useb = bool(branch)
+    
+    if (usep or useg or useb) and not (usep ^ useg ^ useb):
+        raise util.Abort(_(
+           "you cannot combine the --parent, --outgoingchanges "
+           "and --branch options"))
         
+def _find_branch_parent(ui, ctx):
+    '''Find the parent revision of the 'ctx' branch.'''
+    branchname = ctx.branch()
+    
+    getparent = lambda ctx: ctx.parents()[0]
+    
+    currctx = ctx
+    while getparent(currctx) and currctx.branch() == branchname:
+        currctx = getparent(currctx)
+        ui.debug('currctx rev: %s; branch: %s\n' % (currctx.rev(), 
+                                            currctx.branch()))
+    
+    return currctx
+  
 def _find_contexts(repo, parentctx, ctx):
     'Find all context between the contexts, excluding the parent context.'
     contexts = []
@@ -208,7 +235,10 @@ cmdtable = {
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff')),
-        ('g', 'outgoingchanges', False, _('create diff with all outgoing changes'))
+        ('g', 'outgoingchanges', False, 
+            _('create diff with all outgoing changes')),
+        ('b', 'branch', False, 
+            _('create diff of all revisions on the branch'))
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
