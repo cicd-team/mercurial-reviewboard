@@ -2,6 +2,8 @@
 
 import os, errno, re
 import cStringIO
+import operator
+
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
 from mercurial import demandimport
@@ -145,9 +147,14 @@ this is not the case.
         if not repositories:
             raise util.Abort(_('no repositories configured at %s' % server))
 
+        repositories = sorted(repositories, key=operator.itemgetter('name'),
+                              cmp=lambda x, y: cmp(x.lower(), y.lower()))
+
         ui.status('Repositories:\n')
         repo_ids = set()
         for r in repositories:
+            if r['tool'] != 'Mercurial':
+                continue
             ui.status('[%s] %s\n' % (r['id'], r['name']) )
             repo_ids.add(str(r['id']))
         if len(repositories) > 1:
