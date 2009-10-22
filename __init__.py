@@ -9,6 +9,8 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
+__version__ = '1.1'
+
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
 
@@ -31,6 +33,8 @@ it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
 this is not the case.
 '''
+
+    ui.status('postreview plugin, version %s\n' % __version__)
 
     server = ui.config('reviewboard', 'server')
     if not server:
