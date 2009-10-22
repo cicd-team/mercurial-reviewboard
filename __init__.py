@@ -63,14 +63,14 @@ this is not the case.
     outgoingchanges = opts.get('outgoingchanges')
     branch = opts.get('branch')
 
-    _check_parent_options(parent, outgoingchanges, branch)
+    check_parent_options(parent, outgoingchanges, branch)
     
     if outgoingchanges:
         parent = rparent
     elif parent:
         parent = repo[parent]
     elif branch:
-        parent = _find_branch_parent(ui, c)
+        parent = find_branch_parent(ui, c)
     else:
         parent = repo[rev].parents()[0]
 
@@ -84,13 +84,13 @@ this is not the case.
 
     fields = {}
 
-    all_contexts = _find_contexts(repo, parent, c)
+    all_contexts = find_contexts(repo, parent, c)
 
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
     if opts.get('update') or not request_id:
         fields['summary']       = c.description().splitlines()[0]
-        fields['description']   = _create_description(all_contexts)
+        fields['description']   = create_description(all_contexts)
 
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
@@ -184,7 +184,7 @@ def remoteparent(ui, repo, rev, upstream=None):
         if a:
             return orev.parents()[0]
 
-def _check_parent_options(parent, outgoingchanges, branch):
+def check_parent_options(parent, outgoingchanges, branch):
     usep = bool(parent)
     useg = bool(outgoingchanges)
     useb = bool(branch)
@@ -194,7 +194,7 @@ def _check_parent_options(parent, outgoingchanges, branch):
            "you cannot combine the --parent, --outgoingchanges "
            "and --branch options"))
         
-def _find_branch_parent(ui, ctx):
+def find_branch_parent(ui, ctx):
     '''Find the parent revision of the 'ctx' branch.'''
     branchname = ctx.branch()
     
@@ -208,14 +208,14 @@ def _find_branch_parent(ui, ctx):
     
     return currctx
   
-def _find_contexts(repo, parentctx, ctx):
+def find_contexts(repo, parentctx, ctx):
     'Find all context between the contexts, excluding the parent context.'
     contexts = []
     for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
         contexts.append(repo[node])
     return contexts[1:]
 
-def _create_description(contexts):
+def create_description(contexts):
     description = ''
     for context in contexts:
         description += "-- %s\n" % context.description()
