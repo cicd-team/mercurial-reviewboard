@@ -11,7 +11,7 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '1.1'
+__version__ = '1.2.0'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -150,20 +150,32 @@ this is not the case.
         repositories = sorted(repositories, key=operator.itemgetter('name'),
                               cmp=lambda x, y: cmp(x.lower(), y.lower()))
 
-        ui.status('Repositories:\n')
-        repo_ids = set()
+        if outgoingrepo:
+            default = ui.expandpath(outgoingrepo)
+        else:
+            default = ui.expandpath('default-push', 'default')
+        repo_id = 0
         for r in repositories:
             if r['tool'] != 'Mercurial':
                 continue
-            ui.status('[%s] %s\n' % (r['id'], r['name']) )
-            repo_ids.add(str(r['id']))
-        if len(repositories) > 1:
-            repo_id = ui.prompt('repository id:', 0)
-            if not repo_id in repo_ids:
-                raise util.Abort(_('invalid repository ID: %s') % repo_id)
-        else:
-            repo_id = repositories[0]['id']
-            ui.status('repository id: %s\n' % repo_id)
+            if r['path'] == default:
+                repo_id = r['id']
+                ui.status('Using repository: %s\n' % r['name'])
+        if repo_id == 0:
+            ui.status('Repositories:\n')
+            repo_ids = set()
+            for r in repositories:
+                if r['tool'] != 'Mercurial':
+                    continue
+                ui.status('[%s] %s\n' % (r['id'], r['name']) )
+                repo_ids.add(str(r['id']))
+            if len(repositories) > 1:
+                repo_id = ui.prompt('repository id:', 0)
+                if not repo_id in repo_ids:
+                    raise util.Abort(_('invalid repository ID: %s') % repo_id)
+            else:
+                repo_id = repositories[0]['id']
+                ui.status('repository id: %s\n' % repo_id)
 
         try:
             request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
