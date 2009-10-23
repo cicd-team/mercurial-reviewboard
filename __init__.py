@@ -150,18 +150,15 @@ this is not the case.
         repositories = sorted(repositories, key=operator.itemgetter('name'),
                               cmp=lambda x, y: cmp(x.lower(), y.lower()))
 
-        if outgoingrepo:
-            default = ui.expandpath(outgoingrepo)
-        else:
-            default = ui.expandpath('default-push', 'default')
-        repo_id = 0
+        remotepath = expandpath(ui, outgoingrepo).lower()
+        repo_id = None
         for r in repositories:
             if r['tool'] != 'Mercurial':
                 continue
-            if r['path'] == default:
+            if r['path'].lower() == remotepath:
                 repo_id = r['id']
                 ui.status('Using repository: %s\n' % r['name'])
-        if repo_id == 0:
+        if repo_id == None:
             ui.status('Repositories:\n')
             repo_ids = set()
             for r in repositories:
@@ -195,10 +192,7 @@ this is not the case.
     ui.status(msg % request_url)
 
 def remoteparent(ui, repo, rev, upstream=None):
-    if upstream:
-        remotepath = ui.expandpath(upstream)
-    else:
-        remotepath = ui.expandpath('default-push', 'default')
+    remotepath = expandpath(ui, upstream)
     remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
     for o in out:
@@ -206,6 +200,12 @@ def remoteparent(ui, repo, rev, upstream=None):
         a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
         if a:
             return orev.parents()[0]
+
+def expandpath(ui, upstream):
+    if upstream:
+        return ui.expandpath(upstream)
+    else:
+        return ui.expandpath('default-push', 'default')
 
 def check_parent_options(parent, outgoingchanges, branch):
     usep = bool(parent)
