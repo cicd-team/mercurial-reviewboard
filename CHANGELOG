@@ -1,0 +1,24 @@
+Version 1.2 (10/23/09)
+
+    * alphabetic sorting of the repository list
+    
+    * automatic repository selection
+    
+    the plugin will attempt to match the default or outgoing 
+    (-o or -O options) repository url to one of the existing repository urls 
+    in Review Board.  if there is a match, it will be selected 
+    as the review target.
+
+Version 1.1
+
+    * added version numbering
+    
+    * added -b option to post a review of entire branches 
+
+Version 1.0
+
+    * initial fork of https://mercurial-reviewboard.googlecode.com/hg/
+
+    * added -g option to post a review of all outgoing changes
+
+    * putting all commit messages in the review description
