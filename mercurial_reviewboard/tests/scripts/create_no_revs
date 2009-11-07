@@ -1,4 +1,8 @@
-pushd ../repos
+pushd ../repo_tars
 
 hg init no_revs
+
+tar cvf no_revs.tar no_revs/
+
+rm -rf no_revs/
 

@@ -1,15 +1,19 @@
-import os, shutil, subprocess
+import os, os.path, shutil, tarfile
 
-test_dir    = 'mercurial_reviewboard/tests'
-scripts_dir = '%s/scripts/' % test_dir
-repos_dir   = '%s/repos'    % test_dir
+test_dir  = 'mercurial_reviewboard/tests'
+tar_dir   = '%s/repo_tars' % test_dir
+repos_dir = '%s/repos'     % test_dir
+
+def untar(tar_file):
+    tar_path = os.path.join(tar_dir, tar_file)
+    tar = tarfile.open(tar_path)
+    tar.extractall(repos_dir)
+    tar.close()
 
 def setup():
-    shutil.rmtree(repos_dir, ignore_errors=True)
+    if os.path.exists(repos_dir):
+        shutil.rmtree(repos_dir)
     os.mkdir(repos_dir)
-    
-    no_revs = './create_no_revs'
-    subprocess.call([no_revs],  cwd=scripts_dir, shell=True)
-    
-    two_revs = './create_two_revs'
-    subprocess.call([two_revs], cwd=scripts_dir, shell=True)
+        
+    untar('no_revs.tar')
+    untar('two_revs.tar')

@@ -1,4 +1,4 @@
-pushd ../repos
+pushd ../repo_tars
 
 hg init two_revs
 
@@ -6,9 +6,15 @@ pushd two_revs
 
 echo a > a
 hg add
-hg commit -m 0
+hg commit -m 0 -u "john doe"
 
 echo b > b
 hg add
-hg commit -m 1
+hg commit -m 1 -u "john doe"
+
+popd
+
+tar cvf two_revs.tar two_revs/
+
+rm -rf two_revs/
 
