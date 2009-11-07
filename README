@@ -58,9 +58,8 @@ $ hg postreview -b my_branch
 
 TESTING:
 
-In order to run the plugin tests, install nose 
-(http://somethingaboutorange.com/mrl/projects/nose/0.11.1/)
-and run 'nosetests'.
+In order to run the plugin tests, run setup_env.sh and then
+ENV/bin/nosetests.
 
 
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>
