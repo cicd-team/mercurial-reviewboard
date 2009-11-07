@@ -1,0 +1,4 @@
+pushd ../repos
+
+hg init no_revs
+

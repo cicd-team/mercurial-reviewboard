@@ -55,4 +55,14 @@ To post all changes on branch "my_branch":
 
 $ hg postreview -b my_branch
 
+
+TESTING:
+
+In order to run the plugin tests, install nose 
+(http://somethingaboutorange.com/mrl/projects/nose/0.11.1/)
+and run 'nosetests'.  The tests need to execute shell scripts
+in order to set up the test repositories, so the tests will 
+not run under Windows.
+
+
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>

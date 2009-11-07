@@ -1,0 +1,14 @@
+pushd ../repos
+
+hg init two_revs
+
+pushd two_revs
+
+echo a > a
+hg add
+hg commit -m 0
+
+echo b > b
+hg add
+hg commit -m 1
+
