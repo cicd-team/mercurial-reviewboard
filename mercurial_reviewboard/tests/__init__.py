@@ -14,6 +14,6 @@ def setup():
     if os.path.exists(repos_dir):
         shutil.rmtree(repos_dir)
     os.mkdir(repos_dir)
-        
-    untar('no_revs.tar')
-    untar('two_revs.tar')
+    
+    for tar in os.listdir(tar_dir):
+        untar(tar)
