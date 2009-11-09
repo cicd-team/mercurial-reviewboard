@@ -1,5 +1,8 @@
 import os, os.path, shutil, tarfile
 
+from mercurial import fancyopts
+from mercurial_reviewboard import cmdtable
+
 test_dir  = 'mercurial_reviewboard/tests'
 tar_dir   = '%s/repo_tars' % test_dir
 repos_dir = '%s/repos'     % test_dir
@@ -17,3 +20,8 @@ def setup():
     
     for tar in os.listdir(tar_dir):
         untar(tar)
+        
+def get_initial_opts():
+    initial_opts = {}
+    fancyopts.fancyopts([], cmdtable['postreview'][1], initial_opts)
+    return initial_opts

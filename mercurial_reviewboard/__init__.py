@@ -37,6 +37,8 @@ this is not the case.
 '''
 
     ui.status('postreview plugin, version %s\n' % __version__)
+    
+    check_parent_options(opts)
 
     server = ui.config('reviewboard', 'server')
     if not server:
@@ -68,8 +70,6 @@ this is not the case.
     parent = opts.get('parent')
     outgoingchanges = opts.get('outgoingchanges')
     branch = opts.get('branch')
-
-    check_parent_options(parent, outgoingchanges, branch)
     
     if outgoingchanges:
         parent = rparent
@@ -207,10 +207,10 @@ def expandpath(ui, upstream):
     else:
         return ui.expandpath('default-push', 'default')
 
-def check_parent_options(parent, outgoingchanges, branch):
-    usep = bool(parent)
-    useg = bool(outgoingchanges)
-    useb = bool(branch)
+def check_parent_options(opts):
+    usep = bool(opts['parent'])
+    useg = bool(opts['outgoingchanges'])
+    useb = bool(opts['branch'])
     
     if (usep or useg or useb) and not (usep ^ useg ^ useb):
         raise util.Abort(_(
