@@ -40,11 +40,6 @@ this is not the case.
     
     check_parent_options(opts)
 
-    server = ui.config('reviewboard', 'server')
-    if not server:
-        raise util.Abort(
-                _('please specify a reviewboard server in your .hgrc file') )
-
     def getdiff(ui, repo, r, parent):
         '''return diff for the specified revision'''
         output = ""
@@ -83,21 +78,6 @@ this is not the case.
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
 
-    request_id = None
-
-    if opts.get('existing'):
-        request_id = opts.get('existing')
-
-    fields = {}
-
-    all_contexts = find_contexts(repo, parent, c)
-
-    # Don't clobber the summary and description for an existing request
-    # unless specifically asked for    
-    if opts.get('update') or not request_id:
-        fields['summary']       = c.description().splitlines()[0]
-        fields['description']   = create_description(all_contexts)
-
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
@@ -109,18 +89,39 @@ this is not the case.
     else:
         parentdiff = ''
 
+    send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    
+def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
+    
+    server = ui.config('reviewboard', 'server')
+    if not server:
+        raise util.Abort(
+                _('please specify a reviewboard server in your .hgrc file') )
+    
+    fields = {}
+
+    all_contexts = find_contexts(repo, parentc, c)
+
+    request_id = opts['existing']
+    # Don't clobber the summary and description for an existing request
+    # unless specifically asked for    
+    if opts['update'] or not request_id:
+        fields['summary']       = c.description().splitlines()[0]
+        fields['description']   = create_description(all_contexts)
+    
     for field in ('target_groups', 'target_people'):
         value = ui.config('reviewboard', field)
         if value:
             fields[field] = value
+            
+    ui.status('changesets:\n')
+    for ctx in all_contexts:
+        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))    
+    ui.status('reviewboard:\t%s\n' % server)
+    ui.status('\n')
 
     reviewboard = ReviewBoard(server)
 
-    ui.status('changesets:\n')
-    for ctx in all_contexts:
-        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))
-    ui.status('reviewboard:\t%s\n' % server)
-    ui.status('\n')
     username = ui.config('reviewboard', 'user')
     if username:
         ui.status('username: %s\n' % username)
@@ -149,8 +150,8 @@ this is not the case.
 
         repositories = sorted(repositories, key=operator.itemgetter('name'),
                               cmp=lambda x, y: cmp(x.lower(), y.lower()))
-
-        remotepath = expandpath(ui, outgoingrepo).lower()
+        
+        remotepath = expandpath(ui, opts['outgoingrepo']).lower()
         repo_id = None
         for r in repositories:
             if r['tool'] != 'Mercurial':
@@ -176,7 +177,7 @@ this is not the case.
 
         try:
             request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
-            if opts.get('publish'):
+            if opts['publish']:
                 reviewboard.publish(request_id)
         except ReviewBoardError, msg:
             raise util.Abort(_(msg))
@@ -187,7 +188,7 @@ this is not the case.
         request_url = 'http://%s' % request_url
 
     msg = 'review request draft saved: %s\n'
-    if opts.get('publish'):
+    if opts['publish']:
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
 
@@ -255,7 +256,7 @@ cmdtable = {
          _('use specified repository to determine the parent diff base')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
-        ('e', 'existing', '', _('existing request ID to update')),
+        ('e', 'existing', None, _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff')),

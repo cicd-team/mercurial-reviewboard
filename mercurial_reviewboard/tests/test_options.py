@@ -8,7 +8,7 @@ from mercurial_reviewboard.tests import get_initial_opts
 def test_no_parent_combo():
     "You cannot have more than one parent revision."
     
-    initial_opts = get_initial_opts()
-    initial_opts['parent'] = 1
-    initial_opts['outgoingchanges'] = True
-    postreview(ui.ui(), None, **initial_opts)
+    opts = get_initial_opts()
+    opts['parent'] = 1
+    opts['outgoingchanges'] = True
+    postreview(ui.ui(), None, **opts)

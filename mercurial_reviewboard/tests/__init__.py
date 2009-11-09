@@ -1,6 +1,6 @@
 import os, os.path, shutil, tarfile
 
-from mercurial import fancyopts
+from mercurial import fancyopts, hg
 from mercurial_reviewboard import cmdtable
 
 test_dir  = 'mercurial_reviewboard/tests'
@@ -25,3 +25,8 @@ def get_initial_opts():
     initial_opts = {}
     fancyopts.fancyopts([], cmdtable['postreview'][1], initial_opts)
     return initial_opts
+
+def get_repo(ui, name):
+    repo_path = '%s/%s' % (repos_dir, name)
+    repo = hg.repository(ui, repo_path)
+    return repo

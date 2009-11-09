@@ -1,0 +1,35 @@
+pushd ../repo_tars
+
+hg init branch
+
+pushd branch
+
+echo a > a
+hg add
+hg commit -m 0 -u "john doe"
+
+echo b > b
+hg add
+hg commit -m 1 -u "john doe"
+
+echo c > c
+hg add
+hg commit -m 2 -u "john doe"
+
+hg up 0
+hg branch the_branch
+
+echo d > d
+hg add
+hg commit -m 3 -u "john doe"
+
+echo e > e
+hg add
+hg commit -m 4 -u "john doe"
+
+popd
+
+tar cvf branch.tar branch/
+
+rm -rf branch/
+

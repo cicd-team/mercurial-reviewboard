@@ -1,0 +1,3 @@
+pushd ../repos/branch
+
+hg diff -r 0 -r the_branch > ../../diffs/branch
