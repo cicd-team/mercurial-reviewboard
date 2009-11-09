@@ -98,30 +98,12 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
     
-    fields = {}
-
-    all_contexts = find_contexts(repo, parentc, c)
-
-    request_id = opts['existing']
-    # Don't clobber the summary and description for an existing request
-    # unless specifically asked for    
-    if opts['update'] or not request_id:
-        fields['summary']       = c.description().splitlines()[0]
-        fields['description']   = create_description(all_contexts)
-    
-    for field in ('target_groups', 'target_people'):
-        value = ui.config('reviewboard', field)
-        if value:
-            fields[field] = value
-            
-    ui.status('changesets:\n')
-    for ctx in all_contexts:
-        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))    
-    ui.status('reviewboard:\t%s\n' % server)
-    ui.status('\n')
+    fields = createfields(ui, repo, c, parentc, opts)
 
     reviewboard = ReviewBoard(server)
-
+    ui.status('reviewboard:\t%s\n' % server)
+    ui.status('\n')
+    
     username = ui.config('reviewboard', 'user')
     if username:
         ui.status('username: %s\n' % username)
@@ -134,6 +116,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
 
+    request_id = opts['existing']
     if request_id:
         try:
             reviewboard.update_request(request_id, fields, diff, parentdiff)
@@ -191,6 +174,29 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     if opts['publish']:
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
+
+def createfields(ui, repo, c, parentc, opts):
+    fields = {}
+    
+    all_contexts = find_contexts(repo, parentc, c)
+
+    request_id = opts['existing']
+    # Don't clobber the summary and description for an existing request
+    # unless specifically asked for    
+    if opts['update'] or not request_id:
+        fields['summary']       = c.description().splitlines()[0]
+        fields['description']   = create_description(all_contexts)
+    
+    for field in ('target_groups', 'target_people'):
+        value = ui.config('reviewboard', field)
+        if value:
+            fields[field] = value
+            
+    ui.status('changesets:\n')
+    for ctx in all_contexts:
+        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))    
+    
+    return fields
 
 def remoteparent(ui, repo, rev, upstream=None):
     remotepath = expandpath(ui, upstream)
