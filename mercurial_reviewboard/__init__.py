@@ -262,7 +262,7 @@ cmdtable = {
          _('use specified repository to determine the parent diff base')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
-        ('e', 'existing', None, _('existing request ID to update')),
+        ('e', 'existing', '', _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff')),
