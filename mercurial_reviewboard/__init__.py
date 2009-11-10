@@ -38,6 +38,10 @@ this is not the case.
 
     ui.status('postreview plugin, version %s\n' % __version__)
     
+    if not ui.config('reviewboard', 'server'):
+        raise util.Abort(
+                _('please specify a reviewboard server in your .hgrc file') )
+    
     check_parent_options(opts)
 
     def getdiff(ui, repo, r, parent):
@@ -93,13 +97,29 @@ this is not the case.
     
 def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     
-    server = ui.config('reviewboard', 'server')
-    if not server:
-        raise util.Abort(
-                _('please specify a reviewboard server in your .hgrc file') )
-    
     fields = createfields(ui, repo, c, parentc, opts)
 
+    request_id = opts['existing']
+    if request_id:
+        update_review(request_id, ui, fields, diff, parentdiff)
+    else:
+        request_id = create_review(ui, fields, diff, parentdiff, 
+                                   opts)
+
+    request_url = '%s/%s/%s/' % (ui.config('reviewboard', 'server'), 
+                                 "r", request_id)
+
+    if not request_url.startswith('http'):
+        request_url = 'http://%s' % request_url
+
+    msg = 'review request draft saved: %s\n'
+    if opts['publish']:
+        msg = 'review request published: %s\n'
+    ui.status(msg % request_url)
+
+def getreviewboard(ui):
+    server = ui.config('reviewboard', 'server')
+    
     reviewboard = ReviewBoard(server)
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
@@ -115,83 +135,78 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
         reviewboard.login(username, password)
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
+    
+    return reviewboard
 
-    request_id = opts['existing']
-    if request_id:
-        try:
-            reviewboard.update_request(request_id, fields, diff, parentdiff)
-        except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
-    else:
-        try:
-            repositories = reviewboard.repositories()
-        except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
+def update_review(request_id, ui, fields, diff, parentdiff):
+    reviewboard = getreviewboard(ui)
+    try:
+        reviewboard.update_request(request_id, fields, diff, parentdiff)
+    except ReviewBoardError, msg:
+        raise util.Abort(_(msg))
+    
+def create_review(ui, fields, diff, parentdiff, opts):
+    reviewboard = getreviewboard(ui)
+    try:
+        repositories = reviewboard.repositories()
+    except ReviewBoardError, msg:
+        raise util.Abort(_(msg))
 
-        if not repositories:
-            raise util.Abort(_('no repositories configured at %s' % server))
+    if not repositories:
+        raise util.Abort(_('no repositories configured at %s' % server))
 
-        repositories = sorted(repositories, key=operator.itemgetter('name'),
-                              cmp=lambda x, y: cmp(x.lower(), y.lower()))
-        
-        remotepath = expandpath(ui, opts['outgoingrepo']).lower()
-        repo_id = None
+    repositories = sorted(repositories, key=operator.itemgetter('name'),
+                          cmp=lambda x, y: cmp(x.lower(), y.lower()))
+    
+    remotepath = expandpath(ui, opts['outgoingrepo']).lower()
+    repo_id = None
+    for r in repositories:
+        if r['tool'] != 'Mercurial':
+            continue
+        if r['path'].lower() == remotepath:
+            repo_id = r['id']
+            ui.status('Using repository: %s\n' % r['name'])
+    if repo_id == None:
+        ui.status('Repositories:\n')
+        repo_ids = set()
         for r in repositories:
             if r['tool'] != 'Mercurial':
                 continue
-            if r['path'].lower() == remotepath:
-                repo_id = r['id']
-                ui.status('Using repository: %s\n' % r['name'])
-        if repo_id == None:
-            ui.status('Repositories:\n')
-            repo_ids = set()
-            for r in repositories:
-                if r['tool'] != 'Mercurial':
-                    continue
-                ui.status('[%s] %s\n' % (r['id'], r['name']) )
-                repo_ids.add(str(r['id']))
-            if len(repositories) > 1:
-                repo_id = ui.prompt('repository id:', 0)
-                if not repo_id in repo_ids:
-                    raise util.Abort(_('invalid repository ID: %s') % repo_id)
-            else:
-                repo_id = repositories[0]['id']
-                ui.status('repository id: %s\n' % repo_id)
+            ui.status('[%s] %s\n' % (r['id'], r['name']) )
+            repo_ids.add(str(r['id']))
+        if len(repositories) > 1:
+            repo_id = ui.prompt('repository id:', 0)
+            if not repo_id in repo_ids:
+                raise util.Abort(_('invalid repository ID: %s') % repo_id)
+        else:
+            repo_id = repositories[0]['id']
+            ui.status('repository id: %s\n' % repo_id)
 
-        try:
-            request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
-            if opts['publish']:
-                reviewboard.publish(request_id)
-        except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
-
-    request_url = '%s/%s/%s/' % (server, "r", request_id)
-
-    if not request_url.startswith('http'):
-        request_url = 'http://%s' % request_url
-
-    msg = 'review request draft saved: %s\n'
-    if opts['publish']:
-        msg = 'review request published: %s\n'
-    ui.status(msg % request_url)
+    try:
+        request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
+        if opts['publish']:
+            reviewboard.publish(request_id)
+    except ReviewBoardError, msg:
+        raise util.Abort(_(msg))
+    
+    return request_id
 
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
     
     all_contexts = find_contexts(repo, parentc, c)
 
+    changesets_string = 'changesets:\n'
+    changesets_string += \
+        ''.join(['\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()) \
+                 for ctx in all_contexts])
+    ui.status(changesets_string + '\n')
+
     interactive = opts['interactive']
     request_id = opts['existing']
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
     if opts['update'] or not request_id:
-        
-        # description        
-        changesets_string = 'changesets:\n'
-        changesets_string += \
-            ''.join(['\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()) \
-                     for ctx in all_contexts])
-        ui.status(changesets_string + '\n')
         
         # summary
         default_summary = c.description().splitlines()[0]
