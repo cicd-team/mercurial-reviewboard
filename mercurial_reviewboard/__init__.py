@@ -206,20 +206,18 @@ def createfields(ui, repo, c, parentc, opts):
         else:
             fields['summary'] = default_summary
 
+        # description
         if interactive:
             ui.status('enter description:\n')
             description = readline().strip()
-        else:
-            description = changesets_string
-        
-        if interactive:
             ui.status('append changesets to description? (Y/n):\n')
             choice = readline().strip()
             if choice != 'n':
                 if description:
                     description += '\n\n'
                 description += changesets_string
-            
+        else:
+            description = changesets_string
         fields['description'] = description 
 
     for field in ('target_groups', 'target_people'):
