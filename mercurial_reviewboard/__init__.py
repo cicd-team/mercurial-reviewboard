@@ -1,6 +1,6 @@
 '''post changesets to a reviewboard server'''
 
-import os, errno, re
+import os, errno, re, sys
 import cStringIO
 import operator
 
@@ -11,7 +11,7 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '1.2.1'
+__version__ = '1.3.0'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -180,21 +180,52 @@ def createfields(ui, repo, c, parentc, opts):
     
     all_contexts = find_contexts(repo, parentc, c)
 
+    interactive = opts['interactive']
     request_id = opts['existing']
     # Don't clobber the summary and description for an existing request
     # unless specifically asked for    
     if opts['update'] or not request_id:
-        fields['summary']       = c.description().splitlines()[0]
-        fields['description']   = create_description(all_contexts)
-    
+        
+        # description        
+        changesets_string = 'changesets:\n'
+        changesets_string += \
+            ''.join(['\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()) \
+                     for ctx in all_contexts])
+        ui.status(changesets_string + '\n')
+        
+        # summary
+        default_summary = c.description().splitlines()[0]
+        if interactive:
+            ui.status('default summary: %s\n' % default_summary)
+            ui.status('enter summary (or return for default):\n') 
+            summary = readline().strip()
+            if summary:
+                fields['summary'] = summary
+            else:
+                fields['summary'] = default_summary
+        else:
+            fields['summary'] = default_summary
+
+        if interactive:
+            ui.status('enter description:\n')
+            description = readline().strip()
+        else:
+            description = changesets_string
+        
+        if interactive:
+            ui.status('append changesets to description? (Y/n):\n')
+            choice = readline().strip()
+            if choice != 'n':
+                if description:
+                    description += '\n\n'
+                description += changesets_string
+            
+        fields['description'] = description 
+
     for field in ('target_groups', 'target_people'):
         value = ui.config('reviewboard', field)
         if value:
-            fields[field] = value
-            
-    ui.status('changesets:\n')
-    for ctx in all_contexts:
-        ui.status('\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()))    
+            fields[field] = value    
     
     return fields
 
@@ -246,11 +277,9 @@ def find_contexts(repo, parentctx, ctx):
             contexts.append(repo[node])
     return contexts
 
-def create_description(contexts):
-    description = ''
-    for context in contexts:
-        description += "-- %s\n" % context.description()
-    return description
+def readline():
+    line = sys.stdin.readline()
+    return line
 
 cmdtable = {
     "postreview":
@@ -269,7 +298,9 @@ cmdtable = {
         ('g', 'outgoingchanges', False, 
             _('create diff with all outgoing changes')),
         ('b', 'branch', False, 
-            _('create diff of all revisions on the branch'))
+            _('create diff of all revisions on the branch')),
+        ('i', 'interactive', False, 
+            _('override the default summary and description'))
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
