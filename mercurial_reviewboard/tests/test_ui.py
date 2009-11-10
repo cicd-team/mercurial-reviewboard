@@ -1,17 +1,15 @@
 from mock import Mock, patch_object
 from nose.tools import eq_
 
-from mercurial import ui as hg_ui
 import mercurial_reviewboard
 from mercurial_reviewboard import postreview
-from mercurial_reviewboard.tests import get_initial_opts, get_repo
+from mercurial_reviewboard.tests import get_initial_opts, get_repo, mock_ui
 
 expected_status = 'changesets:\n\t1:669e757d4a24 "1"\n\t0:a8ea53640b24 "0"\n\n'
 
 @patch_object(mercurial_reviewboard, 'new_review')
 def test_changeset_shown(mock_create_method):
-    ui = hg_ui.ui()
-    ui.status = Mock()
+    ui = mock_ui()
     
     repo = get_repo(ui, 'two_revs')
     opts = get_initial_opts()
@@ -22,8 +20,7 @@ def test_changeset_shown(mock_create_method):
     
 @patch_object(mercurial_reviewboard, 'update_review')
 def test_changeset_shown_on_existing(mock_create_method):
-    ui = hg_ui.ui()
-    ui.status = Mock()
+    ui = mock_ui()
     
     repo = get_repo(ui, 'two_revs')
     opts = get_initial_opts()

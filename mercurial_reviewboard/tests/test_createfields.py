@@ -1,10 +1,9 @@
 from mock import patch_object
 from nose.tools import eq_
 
-from mercurial import ui as hg_ui
 import mercurial_reviewboard
 from mercurial_reviewboard import createfields
-from mercurial_reviewboard.tests import get_initial_opts, get_repo
+from mercurial_reviewboard.tests import get_initial_opts, get_repo, mock_ui
 
 changesets_string = ('changesets:\n'
                      '\t1:669e757d4a24 "1"\n'
@@ -13,7 +12,7 @@ changesets_string = ('changesets:\n'
 class TestCreateFields:
     
     def setup(self):
-        ui = hg_ui.ui()
+        ui = mock_ui()
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
         
@@ -34,7 +33,7 @@ class TestCreateFieldsInteractive:
     
     def setup(self):
         
-        self.ui = hg_ui.ui()
+        self.ui = mock_ui()
         self.repo = get_repo(self.ui, 'two_revs')
         self.opts = get_initial_opts()
         self.opts['interactive'] = True
