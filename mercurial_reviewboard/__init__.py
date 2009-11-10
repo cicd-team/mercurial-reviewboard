@@ -273,6 +273,7 @@ def find_contexts(repo, parentctx, ctx):
     for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
         if node != parentctx.node():
             contexts.append(repo[node])
+    contexts.reverse()
     return contexts
 
 def readline():

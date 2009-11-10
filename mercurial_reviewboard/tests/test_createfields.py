@@ -7,8 +7,8 @@ from mercurial_reviewboard import createfields
 from mercurial_reviewboard.tests import get_initial_opts, get_repo
 
 changesets_string = ('changesets:\n'
-                     '\t0:a8ea53640b24 "0"\n'
-                     '\t1:669e757d4a24 "1"\n')
+                     '\t1:669e757d4a24 "1"\n'
+                     '\t0:a8ea53640b24 "0"\n')
 
 class TestCreateFields:
     
