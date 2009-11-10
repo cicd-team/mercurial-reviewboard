@@ -34,20 +34,38 @@ def get_repo(ui, name):
     return repo
 
 def mock_ui():
-    mock = Mock(wraps=ui.ui())
+    def create_mock(ui):
+        mock = Mock(wraps=ui)
+        
+        # used by diff in patch.py
+        mock.quiet = False
+        mock.debugflag = False
+        
+        # suppress the loading of extensions in extensions.py
+        configitems_mock = Mock()
+        configitems_mock.return_value = []
+        mock.configitems = configitems_mock
+        
+        def config_side_effect(*args, **kwargs):
+            if args[0] == 'reviewboard':
+                if args[1] == 'server':
+                    return 'http://rb'
+                elif args[1] == 'target_groups':
+                    return None
+                elif args[1] == 'target_people':
+                    return None
+            raise Exception("unknown args: %s" % args.__str__())
+        config_mock = Mock()
+        config_mock.side_effect = config_side_effect
+        mock.config = config_mock
+        
+        def copy_side_effect():
+            copy = ui.copy()
+            return create_mock(copy)
+        copy_mock = Mock()
+        copy_mock.side_effect = copy_side_effect
+        mock.copy = copy_mock
+        
+        return mock
     
-    def config_side_effect(*args, **kwargs):
-        if args[0] == 'reviewboard':
-            if args[1] == 'server':
-                return 'http://rb'
-            elif args[1] == 'target_groups':
-                return None
-            elif args[1] == 'target_people':
-                return None
-        raise Exception("unknown args: %s" % args.__str__())
-    config_mock = Mock()
-    config_mock.side_effect = config_side_effect
-    
-    mock.config.return_value = config_mock
-    
-    return mock
+    return create_mock(ui.ui())
