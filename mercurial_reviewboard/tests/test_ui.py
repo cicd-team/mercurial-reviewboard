@@ -8,7 +8,7 @@ from mercurial_reviewboard.tests import get_initial_opts, get_repo
 
 expected_status = 'changesets:\n\t1:669e757d4a24 "1"\n\t0:a8ea53640b24 "0"\n\n'
 
-@patch_object(mercurial_reviewboard, 'create_review')
+@patch_object(mercurial_reviewboard, 'new_review')
 def test_changeset_shown(mock_create_method):
     ui = hg_ui.ui()
     ui.status = Mock()

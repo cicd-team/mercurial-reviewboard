@@ -103,7 +103,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     if request_id:
         update_review(request_id, ui, fields, diff, parentdiff)
     else:
-        request_id = create_review(ui, fields, diff, parentdiff, 
+        request_id = new_review(ui, fields, diff, parentdiff, 
                                    opts)
 
     request_url = '%s/%s/%s/' % (ui.config('reviewboard', 'server'), 
@@ -145,7 +145,7 @@ def update_review(request_id, ui, fields, diff, parentdiff):
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
     
-def create_review(ui, fields, diff, parentdiff, opts):
+def new_review(ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui)
     try:
         repositories = reviewboard.repositories()
