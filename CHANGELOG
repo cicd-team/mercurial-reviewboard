@@ -1,3 +1,16 @@
+Version 1.3.0 (11/10/09)
+
+    * added --interactive option
+    
+    the --interactive option allows setting the summary and description from
+    the command line
+    
+    * review descriptions now include changeset revision numbers and hexes
+    
+    * changesets are now sorted in reverse chronological order
+    
+    * bug fixes
+
 Version 1.2.1 (11/7/09)
 
     * bug fixes
