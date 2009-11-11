@@ -44,13 +44,6 @@ this is not the case.
     
     check_parent_options(opts)
 
-    def getdiff(ui, repo, r, parent):
-        '''return diff for the specified revision'''
-        output = ""
-        for chunk in patch.diff(repo, parent.node(), r.node()):
-            output += chunk
-        return output
-
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
@@ -116,6 +109,13 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     if opts['publish']:
         msg = 'review request published: %s\n'
     ui.status(msg % request_url)
+    
+def getdiff(ui, repo, r, parent):
+    '''return diff for the specified revision'''
+    output = ""
+    for chunk in patch.diff(repo, parent.node(), r.node()):
+        output += chunk
+    return output
 
 def getreviewboard(ui):
     server = ui.config('reviewboard', 'server')
