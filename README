@@ -58,8 +58,10 @@ $ hg postreview -b my_branch
 
 TESTING:
 
-In order to run the plugin tests, run setup_env.sh and then
-ENV/bin/nosetests.
+In order to run the plugin tests, run:
+
+    python bootstrap.py ENV --no-site-packages
+    ENV/bin/nosetests
 
 
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>
