@@ -105,7 +105,11 @@ this is not the case.
         ui.status('username: %s\n' % username)
     else:
         username = ui.prompt('username:')
-    password = ui.getpass()
+    password = ui.config('reviewboard', 'password')
+    if password:
+        ui.status('password: %s\n' % '**********')
+    else:
+        password = ui.getpass()
 
     try:
         reviewboard.login(username, password)
