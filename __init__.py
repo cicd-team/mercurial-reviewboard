@@ -91,7 +91,10 @@ this is not the case.
         parentdiff = ''
 
     for field in ('target_groups', 'target_people'):
-        value = ui.config('reviewboard', field)
+        if opts.get(field):
+            value = ','.join(opts.get(field))
+        else:
+            value = ui.config('reviewboard', field)
         if value:
             fields[field] = value
 
@@ -187,7 +190,9 @@ cmdtable = {
         ('e', 'existing', '', _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
-        ('', 'parent', '', _('parent revision for the uploaded diff'))
+        ('', 'parent', '', _('parent revision for the uploaded diff')),
+        ('U', 'target_people', [], _('comma separated list of people needed to review the code')),
+        ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
