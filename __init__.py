@@ -51,6 +51,7 @@ this is not the case.
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
+    repo_id_opt = opts.get('repoid')
 
     if master:
         rparent = repo[master]
@@ -125,26 +126,29 @@ this is not the case.
         except ReviewBoardError, msg:
             raise util.Abort(_(msg))
     else:
-        try:
-            repositories = reviewboard.repositories()
-        except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
-
-        if not repositories:
-            raise util.Abort(_('no repositories configured at %s' % server))
-
-        ui.status('Repositories:\n')
-        repo_ids = set()
-        for r in repositories:
-            ui.status('[%s] %s\n' % (r['id'], r['name']) )
-            repo_ids.add(str(r['id']))
-        if len(repositories) > 1:
-            repo_id = ui.prompt('repository id:', 0)
-            if not repo_id in repo_ids:
-                raise util.Abort(_('invalid repository ID: %s') % repo_id)
+        if repo_id_opt:
+            repo_id = int(repo_id_opt)
         else:
-            repo_id = repositories[0]['id']
-            ui.status('repository id: %s\n' % repo_id)
+            try:
+                repositories = reviewboard.repositories()
+            except ReviewBoardError, msg:
+                raise util.Abort(_(msg))
+
+            if not repositories:
+                raise util.Abort(_('no repositories configured at %s' % server))
+
+            ui.status('Repositories:\n')
+            repo_ids = set()
+            for r in repositories:
+                ui.status('[%s] %s\n' % (r['id'], r['name']) )
+                repo_ids.add(str(r['id']))
+            if len(repositories) > 1:
+                repo_id = ui.prompt('repository id:', 0)
+                if not repo_id in repo_ids:
+                    raise util.Abort(_('invalid repository ID: %s') % repo_id)
+            else:
+                repo_id = repositories[0]['id']
+                ui.status('repository id: %s\n' % repo_id)
 
         try:
             request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
@@ -185,6 +189,8 @@ cmdtable = {
          _('use upstream repository to determine the parent diff base')),
         ('O', 'outgoingrepo', '',
          _('use specified repository to determine the parent diff base')),
+        ('i', 'repoid', '',
+         _('specify repository id on reviewboard server')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
         ('e', 'existing', '', _('existing request ID to update')),
