@@ -104,16 +104,12 @@ this is not the case.
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
-    username = ui.config('reviewboard', 'user')
+    username = opts.get('username') or ui.config('reviewboard', 'user')
     if username:
         ui.status('username: %s\n' % username)
-    else:
-        username = ui.prompt('username:')
-    password = ui.config('reviewboard', 'password')
+    password = opts.get('password') or ui.config('reviewboard', 'password')
     if password:
         ui.status('password: %s\n' % '**********')
-    else:
-        password = ui.getpass()
 
     try:
         reviewboard.login(username, password)
@@ -199,6 +195,8 @@ cmdtable = {
         ('', 'parent', '', _('parent revision for the uploaded diff')),
         ('U', 'target_people', [], _('comma separated list of people needed to review the code')),
         ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
+        ('', 'username', '', _('username for the ReviewBoard site')),
+        ('', 'password', '', _('password for the ReviewBoard site')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
