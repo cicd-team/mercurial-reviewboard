@@ -21,13 +21,13 @@ def set_up_two_revs():
 
 def test_target_people():
     ui, repo, c, parentc, opts = set_up_two_revs()
-    opts['target_people'] = ['john, jane']
+    opts['target_people'] = 'john, jane'
     fields = createfields(ui, repo, c, parentc, opts)
     eq_('john, jane', fields['target_people'])
     
 def test_target_groups():
     ui, repo, c, parentc, opts = set_up_two_revs()
-    opts['target_groups'] = ['foo, bar']
+    opts['target_groups'] = 'foo, bar'
     fields = createfields(ui, repo, c, parentc, opts)
     eq_('foo, bar', fields['target_groups'])
 

@@ -17,10 +17,10 @@ def test_target_groups():
     opts = {}
     args = fancyopts.fancyopts(['-G', 'foo, bar'], cmdtable['postreview'][1], 
                                opts, True)
-    eq_(['foo, bar'], opts['target_groups'])
+    eq_('foo, bar', opts['target_groups'])
 
 def test_target_people():
     opts = {}
     args = fancyopts.fancyopts(['-U', 'john, jane'], cmdtable['postreview'][1], 
                                opts, True)
-    eq_(['john, jane'], opts['target_people'])
+    eq_('john, jane', opts['target_people'])

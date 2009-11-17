@@ -249,7 +249,7 @@ def createfields(ui, repo, c, parentc, opts):
 
     for field in ('target_groups', 'target_people'):
         if opts.get(field):
-            value = ','.join(opts.get(field))
+            value = opts.get(field)
         else:
             value = ui.config('reviewboard', field)
         if value:
@@ -332,8 +332,10 @@ cmdtable = {
             _('create diff of all revisions on the branch')),
         ('I', 'interactive', False, 
             _('override the default summary and description')),
-        ('U', 'target_people', [], _('comma separated list of people needed to review the code')),
-        ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
+        ('U', 'target_people', '', 
+            _('comma separated list of people needed to review the code')),
+        ('G', 'target_groups', '', 
+            _('comma separated list of groups needed to review the code')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
