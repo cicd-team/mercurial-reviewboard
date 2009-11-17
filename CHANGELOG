@@ -1,3 +1,19 @@
+Version 2.0.0 (11/17/09)
+
+    * renamed shortflag for --interactive to -I
+    
+    original -i flag conflicted with changes in the parent project
+
+    * merged in latest changes from parent project
+    
+    changes included below
+    
+    * can now include reviewboard password in the config
+    
+    * added --target-people and --target-groups options
+    
+    * added -i option to specify repo id
+
 Version 1.3.0 (11/10/09)
 
     * added --interactive option

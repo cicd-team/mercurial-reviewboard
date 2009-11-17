@@ -11,7 +11,7 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '1.3.0'
+__version__ = '2.0.0'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -129,7 +129,11 @@ def getreviewboard(ui):
         ui.status('username: %s\n' % username)
     else:
         username = ui.prompt('username:')
-    password = ui.getpass()
+    password = ui.config('reviewboard', 'password')
+    if password:
+        ui.status('password: %s\n' % '**********')
+    else:
+        password = ui.getpass()
 
     try:
         reviewboard.login(username, password)
@@ -147,6 +151,22 @@ def update_review(request_id, ui, fields, diff, parentdiff):
     
 def new_review(ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui)
+    
+    repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
+
+    try:
+        request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
+        if opts['publish']:
+            reviewboard.publish(request_id)
+    except ReviewBoardError, msg:
+        raise util.Abort(_(msg))
+    
+    return request_id
+
+def find_reviewboard_repo_id(ui, reviewboard, opts):
+    if opts.get('repoid'):
+        return int(opts.get('repoid'))
+    
     try:
         repositories = reviewboard.repositories()
     except ReviewBoardError, msg:
@@ -181,15 +201,7 @@ def new_review(ui, fields, diff, parentdiff, opts):
         else:
             repo_id = repositories[0]['id']
             ui.status('repository id: %s\n' % repo_id)
-
-    try:
-        request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
-        if opts['publish']:
-            reviewboard.publish(request_id)
-    except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
-    
-    return request_id
+    return repo_id
 
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
@@ -236,9 +248,12 @@ def createfields(ui, repo, c, parentc, opts):
         fields['description'] = description 
 
     for field in ('target_groups', 'target_people'):
-        value = ui.config('reviewboard', field)
+        if opts.get(field):
+            value = ','.join(opts.get(field))
+        else:
+            value = ui.config('reviewboard', field)
         if value:
-            fields[field] = value    
+            fields[field] = value 
     
     return fields
 
@@ -303,6 +318,8 @@ cmdtable = {
          _('use upstream repository to determine the parent diff base')),
         ('O', 'outgoingrepo', '',
          _('use specified repository to determine the parent diff base')),
+        ('i', 'repoid', '',
+         _('specify repository id on reviewboard server')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
         ('e', 'existing', '', _('existing request ID to update')),
@@ -313,8 +330,10 @@ cmdtable = {
             _('create diff with all outgoing changes')),
         ('b', 'branch', False, 
             _('create diff of all revisions on the branch')),
-        ('i', 'interactive', False, 
-            _('override the default summary and description'))
+        ('I', 'interactive', False, 
+            _('override the default summary and description')),
+        ('U', 'target_people', [], _('comma separated list of people needed to review the code')),
+        ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
