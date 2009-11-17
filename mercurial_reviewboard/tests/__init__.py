@@ -54,6 +54,10 @@ def mock_ui():
                     return None
                 elif args[1] == 'target_people':
                     return None
+                elif args[1] == 'user':
+                    return 'foo'
+                elif args[1] == 'password':
+                    return 'bar'
             raise Exception("unknown args: %s" % args.__str__())
         config_mock = Mock()
         config_mock.side_effect = config_side_effect
