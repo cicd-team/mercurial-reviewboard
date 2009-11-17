@@ -24,3 +24,9 @@ def test_target_people():
     args = fancyopts.fancyopts(['-U', 'john, jane'], cmdtable['postreview'][1], 
                                opts, True)
     eq_('john, jane', opts['target_people'])
+    
+def test_repoid():
+    opts = {}
+    args = fancyopts.fancyopts(['-i', '101'], cmdtable['postreview'][1], 
+                               opts, True)
+    eq_('101', opts['repoid'])
