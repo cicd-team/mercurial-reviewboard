@@ -9,18 +9,22 @@ changesets_string = ('changesets:\n'
                      '\t1:669e757d4a24 "1"\n'
                      '\t0:a8ea53640b24 "0"\n')
 
-class TestCreateFields:
+def set_up_two_revs():
+    ui = mock_ui()
+    repo = get_repo(ui, 'two_revs')
+    opts = get_initial_opts()
+    
+    c = repo[1]
+    parentc = repo['000000']
+    
+    return ui, repo, c, parentc, opts
+
+class TestCreateFieldsRevisionDetails:
     
     def setup(self):
-        ui = mock_ui()
-        repo = get_repo(ui, 'two_revs')
-        opts = get_initial_opts()
+        ui, repo, c, parentc, opts = set_up_two_revs()
         
-        c = repo[1]
-        parentc = repo['000000']
-        
-        self.fields = createfields(ui, repo, c, parentc, 
-                                                         opts)
+        self.fields = createfields(ui, repo, c, parentc, opts)
     
     def test_createfields_summary(self):
         eq_('1', self.fields['summary'])
@@ -29,17 +33,11 @@ class TestCreateFields:
         expected = changesets_string
         eq_(expected, self.fields['description'])
         
-class TestCreateFieldsInteractive:
+class TestCreateFieldsRevisionDetailsInteractive:
     
     def setup(self):
-        
-        self.ui = mock_ui()
-        self.repo = get_repo(self.ui, 'two_revs')
-        self.opts = get_initial_opts()
-        self.opts['interactive'] = True
-        
-        self.c = self.repo[1]
-        self.parentc = self.repo['000000']
+        self.ui, self.repo, self.c, self.parentc, self.opts = set_up_two_revs()
+        self.opts['interactive'] = True        
     
     @patch_object(mercurial_reviewboard, 'readline')
     def test_createfields_summary(self, mock_read):
