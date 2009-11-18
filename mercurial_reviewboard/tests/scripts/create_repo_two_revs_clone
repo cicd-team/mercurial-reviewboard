@@ -1,0 +1,26 @@
+pushd ../repo_tars
+
+tar xvf two_revs.tar
+
+hg clone two_revs/ two_revs_clone
+
+pushd two_revs_clone
+
+# add revisions for testing the -g flag
+
+echo c > c
+hg add
+hg commit -m 2 -u "john doe"
+
+hg up 0
+echo d > d
+hg add
+hg commit -m 3 -u "john doe"
+
+popd
+
+tar cvf two_revs_clone.tar two_revs_clone/
+
+rm -rf two_revs/
+rm -rf two_revs_clone/
+
