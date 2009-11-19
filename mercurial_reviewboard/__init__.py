@@ -81,7 +81,7 @@ def find_parent(ui, repo, c, rparent, opts):
     elif branch:
         parent = find_branch_parent(ui, c)
     else:
-        parent = repo[rev].parents()[0]
+        parent = c.parents()[0]
     return parent
 
 def create_review_data(ui, repo, c, parent, rparent):
