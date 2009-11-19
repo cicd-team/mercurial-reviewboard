@@ -31,6 +31,24 @@ def test_target_groups():
     fields = createfields(ui, repo, c, parentc, opts)
     eq_('foo, bar', fields['target_groups'])
 
+def test_branch_description():
+    ui = mock_ui()
+    repo = get_repo(ui, 'branch')
+    opts = get_initial_opts()
+    opts['branch'] = True
+    
+    c = repo[4]
+    parentc = repo[0]
+    
+    fields = createfields(ui, repo, c, parentc, opts)
+    
+    expected = ('review of branch: the_branch\n\n'
+                'changesets:\n'
+                '\t4:173fa0623445 "4"\n'
+                '\t3:0c15fa2e6ba5 "3"\n')
+    
+    eq_(expected, fields['description'])
+
 class TestCreateFieldsRevisionDetails:
     
     def setup(self):

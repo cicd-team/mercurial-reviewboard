@@ -47,7 +47,7 @@ def mock_ui():
         mock.configitems = configitems_mock
         
         # set some default config values
-        mock.setconfig('reviewboard', 'server',    'http://rb')
+        mock.setconfig('reviewboard', 'server',   'http://rb')
         mock.setconfig('reviewboard', 'user',     'foo')
         mock.setconfig('reviewboard', 'password', 'bar')
         

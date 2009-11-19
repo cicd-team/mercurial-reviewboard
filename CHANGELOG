@@ -1,3 +1,10 @@
+Version 2.0.1 (11/19/09)
+
+    * added branch name to output
+    
+    when using the --branch flag, the branch name will appear in the
+    console and in the review description
+
 Version 2.0.0 (11/17/09)
 
     * renamed shortflag for --interactive to -I

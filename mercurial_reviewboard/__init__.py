@@ -11,7 +11,7 @@ demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '2.0.0'
+__version__ = '2.0.1'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -222,6 +222,9 @@ def createfields(ui, repo, c, parentc, opts):
     changesets_string += \
         ''.join(['\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()) \
                  for ctx in all_contexts])
+    if opts['branch']:
+        branch_msg = "review of branch: %s\n\n" % (c.branch())
+        changesets_string = branch_msg + changesets_string
     ui.status(changesets_string + '\n')
 
     interactive = opts['interactive']
