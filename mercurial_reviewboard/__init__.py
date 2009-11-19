@@ -44,6 +44,17 @@ this is not the case.
     
     check_parent_options(opts)
 
+    rparent = find_rparent(ui, repo, rev, opts)
+
+    c = repo.changectx(rev)
+        
+    parent = find_parent(ui, repo, c, rparent, opts)
+
+    diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
+
+    send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    
+def find_rparent(ui, repo, rev, opts):
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
@@ -56,9 +67,9 @@ this is not the case.
         rparent = remoteparent(ui, repo, rev)
     else:
         rparent = None
+    return rparent
 
-    c = repo.changectx(rev)
-        
+def find_parent(ui, repo, c, rparent, opts):
     parent = opts.get('parent')
     outgoingchanges = opts.get('outgoingchanges')
     branch = opts.get('branch')
@@ -71,10 +82,10 @@ this is not the case.
         parent = find_branch_parent(ui, c)
     else:
         parent = repo[rev].parents()[0]
+    return parent
 
-    ui.debug(_('Parent is %s\n' % parent))
-    ui.debug(_('Remote parent is %s\n' % rparent))
-
+def create_review_data(ui, repo, c, parent, rparent):
+    'Returns a tuple of the diff and parent diff for the review.'
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
@@ -85,8 +96,8 @@ this is not the case.
         ui.debug(parentdiff + '\n')
     else:
         parentdiff = ''
-
-    send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    return diff, parentdiff
+    
     
 def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     
