@@ -1,0 +1,5 @@
+pushd ../repos/two_revs
+
+hg diff -r 00000 -r 0 > ../../diffs/two_revs_0
+
+hg diff -r 0     -r 1 > ../../diffs/two_revs_1

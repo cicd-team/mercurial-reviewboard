@@ -9,6 +9,6 @@ def test_remoteparent_is_empty():
     
     repo = get_repo(ui, 'two_revs')
     
-    parent = remoteparent(ui, repo, 1, upstream=child_repo_path)
+    parent = remoteparent(ui, repo, repo.changectx(1), upstream=child_repo_path)
     
     eq_('0000000000000000000000000000000000000000', parent.hex())

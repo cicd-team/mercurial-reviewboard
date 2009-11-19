@@ -44,6 +44,16 @@ this is not the case.
     
     check_parent_options(opts)
 
+    c = repo.changectx(rev)
+
+    rparent = find_rparent(ui, repo, c, opts)        
+    parent  = find_parent(ui, repo, c, rparent, opts)
+
+    diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
+
+    send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    
+def find_rparent(ui, repo, c, opts):
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
@@ -51,14 +61,14 @@ this is not the case.
     if master:
         rparent = repo[master]
     elif outgoingrepo:
-        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+        rparent = remoteparent(ui, repo, c, upstream=outgoingrepo)
     elif outgoing:
-        rparent = remoteparent(ui, repo, rev)
+        rparent = remoteparent(ui, repo, c)
     else:
         rparent = None
+    return rparent
 
-    c = repo.changectx(rev)
-        
+def find_parent(ui, repo, c, rparent, opts):
     parent = opts.get('parent')
     outgoingchanges = opts.get('outgoingchanges')
     branch = opts.get('branch')
@@ -70,11 +80,11 @@ this is not the case.
     elif branch:
         parent = find_branch_parent(ui, c)
     else:
-        parent = repo[rev].parents()[0]
+        parent = c.parents()[0]
+    return parent
 
-    ui.debug(_('Parent is %s\n' % parent))
-    ui.debug(_('Remote parent is %s\n' % rparent))
-
+def create_review_data(ui, repo, c, parent, rparent):
+    'Returns a tuple of the diff and parent diff for the review.'
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
@@ -85,8 +95,8 @@ this is not the case.
         ui.debug(parentdiff + '\n')
     else:
         parentdiff = ''
-
-    send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    return diff, parentdiff
+    
     
 def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     
@@ -257,13 +267,13 @@ def createfields(ui, repo, c, parentc, opts):
     
     return fields
 
-def remoteparent(ui, repo, rev, upstream=None):
+def remoteparent(ui, repo, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
     remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
     for o in out:
         orev = repo[o]
-        a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
+        a, b, c = repo.changelog.nodesbetween([orev.node()], [ctx.node()])
         if a:
             return orev.parents()[0]
 
