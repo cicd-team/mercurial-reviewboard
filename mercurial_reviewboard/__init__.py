@@ -44,17 +44,16 @@ this is not the case.
     
     check_parent_options(opts)
 
-    rparent = find_rparent(ui, repo, rev, opts)
-
     c = repo.changectx(rev)
-        
-    parent = find_parent(ui, repo, c, rparent, opts)
+
+    rparent = find_rparent(ui, repo, c, opts)        
+    parent  = find_parent(ui, repo, c, rparent, opts)
 
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
     send_review(ui, repo, c, parent, diff, parentdiff, opts)
     
-def find_rparent(ui, repo, rev, opts):
+def find_rparent(ui, repo, c, opts):
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
@@ -62,9 +61,9 @@ def find_rparent(ui, repo, rev, opts):
     if master:
         rparent = repo[master]
     elif outgoingrepo:
-        rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
+        rparent = remoteparent(ui, repo, c, upstream=outgoingrepo)
     elif outgoing:
-        rparent = remoteparent(ui, repo, rev)
+        rparent = remoteparent(ui, repo, c)
     else:
         rparent = None
     return rparent
@@ -268,13 +267,13 @@ def createfields(ui, repo, c, parentc, opts):
     
     return fields
 
-def remoteparent(ui, repo, rev, upstream=None):
+def remoteparent(ui, repo, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
     remoterepo = hg.repository(ui, remotepath)
     out = repo.findoutgoing(remoterepo)
     for o in out:
         orev = repo[o]
-        a, b, c = repo.changelog.nodesbetween([orev.node()], [repo[rev].node()])
+        a, b, c = repo.changelog.nodesbetween([orev.node()], [ctx.node()])
         if a:
             return orev.parents()[0]
 
