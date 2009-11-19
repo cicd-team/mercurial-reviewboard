@@ -46,22 +46,10 @@ def mock_ui():
         configitems_mock.return_value = []
         mock.configitems = configitems_mock
         
-        def config_side_effect(*args, **kwargs):
-            if args[0] == 'reviewboard':
-                if args[1] == 'server':
-                    return 'http://rb'
-                elif args[1] == 'target_groups':
-                    return None
-                elif args[1] == 'target_people':
-                    return None
-                elif args[1] == 'user':
-                    return 'foo'
-                elif args[1] == 'password':
-                    return 'bar'
-            raise Exception("unknown args: %s" % args.__str__())
-        config_mock = Mock()
-        config_mock.side_effect = config_side_effect
-        mock.config = config_mock
+        # set some default config values
+        mock.setconfig('reviewboard', 'server',    'http://rb')
+        mock.setconfig('reviewboard', 'user',     'foo')
+        mock.setconfig('reviewboard', 'password', 'bar')
         
         def copy_side_effect():
             copy = ui.copy()
@@ -69,6 +57,10 @@ def mock_ui():
         copy_mock = Mock()
         copy_mock.side_effect = copy_side_effect
         mock.copy = copy_mock
+        
+        # block out command line interaction
+        mock.prompt = Mock()        
+        mock.getpass = Mock()
         
         return mock
     
