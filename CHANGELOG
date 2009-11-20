@@ -5,6 +5,8 @@ Version 2.1.0 (11/19/09)
     changes included below
     
     * can now pass username and password as command line options
+    
+    * should now be compatible with hg-git and TortoiseHg
 
 Version 2.0.1 (11/19/09)
 
