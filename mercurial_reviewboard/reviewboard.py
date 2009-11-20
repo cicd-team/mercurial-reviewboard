@@ -2,10 +2,12 @@
 # post-review code.
 
 import cookielib
+import getpass
 import mimetools
+import os
 import urllib2
 import simplejson
-from urlparse import urljoin
+from urlparse import urljoin, urlparse
 
 class APIError(Exception):
     pass
@@ -13,12 +15,54 @@ class APIError(Exception):
 class ReviewBoardError(Exception):
     pass
 
+class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
+    """
+    Adds HTTP authentication support for URLs.
+
+    Python 2.4's password manager has a bug in http authentication when the
+    target server uses a non-standard port.  This works around that bug on
+    Python 2.4 installs. This also allows post-review to prompt for passwords
+    in a consistent way.
+
+    See: http://bugs.python.org/issue974757
+    """
+    def __init__(self, reviewboard_url):
+        self.passwd  = {}
+        self.rb_url  = reviewboard_url
+        self.rb_user = None
+        self.rb_pass = None
+
+    def find_user_password(self, realm, uri):
+        if uri.startswith(self.rb_url):
+            if self.rb_user is None or self.rb_pass is None:
+                print "==> HTTP Authentication Required"
+                print 'Enter username and password for "%s" at %s' % \
+                    (realm, urlparse(uri)[1])
+                self.rb_user = raw_input('Username: ')
+                self.rb_pass = getpass.getpass('Password: ')
+
+            return self.rb_user, self.rb_pass
+        else:
+            # If this is an auth request for some other domain (since HTTP
+            # handlers are global), fall back to standard password management.
+            return urllib2.HTTPPasswordMgr.find_user_password(self, realm, uri)
+
+
 class ReviewBoard:
     def __init__(self, url):
         if not url.endswith('/'):
             url = url + '/'
         self.url       = url
-        self._cj = cookielib.MozillaCookieJar()
+        if 'USERPROFILE' in os.environ:
+            homepath = os.path.join(os.environ["USERPROFILE"], "Local Settings",
+                                    "Application Data")
+        elif 'HOME' in os.environ:
+            homepath = os.environ["HOME"]
+        else:
+            homepath = ''
+        self.cookie_file = os.path.join(homepath, ".post-review-cookies.txt")
+        self._cj = cookielib.MozillaCookieJar(self.cookie_file)
+        password_mgr = ReviewBoardHTTPPasswordMgr(self.url)
         self._opener = opener = urllib2.build_opener(
                         urllib2.ProxyHandler(),
                         urllib2.UnknownHandler(),
@@ -26,12 +70,55 @@ class ReviewBoard:
                         urllib2.HTTPDefaultErrorHandler(),
                         urllib2.HTTPErrorProcessor(),
                         urllib2.HTTPCookieProcessor(self._cj),
+                        urllib2.HTTPBasicAuthHandler(password_mgr)
                         )
         urllib2.install_opener(self._opener)
         self._repositories = None
         self._requests = None
 
-    def login(self, username, password):
+    def has_valid_cookie(self):
+        """
+        Load the user's cookie file and see if they have a valid
+        'rbsessionid' cookie for the current Review Board server.  Returns
+        true if so and false otherwise.
+        """
+        try:
+            parsed_url = urlparse(self.url)
+            host = parsed_url[1]
+            path = parsed_url[2] or '/'
+
+            # Cookie files don't store port numbers, unfortunately, so
+            # get rid of the port number if it's present.
+            host = host.split(":")[0]
+
+            print("Looking for '%s %s' cookie in %s" % \
+                  (host, path, self.cookie_file))
+            self._cj.load(self.cookie_file, ignore_expires=True)
+
+            try:
+                cookie = self._cj._cookies[host][path]['rbsessionid']
+
+                if not cookie.is_expired():
+                    print("Loaded valid cookie -- no login required")
+                    return True
+
+                print("Cookie file loaded, but cookie has expired")
+            except KeyError:
+                print("Cookie file loaded, but no cookie for this server")
+        except IOError, error:
+            print("Couldn't load cookie file: %s" % error)
+
+        return False
+
+    def login(self, username=None, password=None):
+        if not username and not password and self.has_valid_cookie():
+            return
+
+        if not username:
+            username = raw_input('Username: ')
+        if not password:
+            password = getpass.getpass('Password: ')
+
         self._api_post('/api/json/accounts/login/', {
             'username': username,
             'password': password,
@@ -117,6 +204,7 @@ class ReviewBoard:
         try:
             r = urllib2.Request(url, body, headers)
             data = urllib2.urlopen(r).read()
+            self._cj.save(self.cookie_file)
             return data
         except urllib2.URLError, e:
             raise ReviewBoardError, ("Unable to access %s.\n%s" % \

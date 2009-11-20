@@ -1,3 +1,11 @@
+Version 2.1.0 (11/19/09)
+
+    * merged in latest changes from parent project
+    
+    changes included below
+    
+    * can now pass username and password as command line options
+
 Version 2.0.1 (11/19/09)
 
     * added branch name to output

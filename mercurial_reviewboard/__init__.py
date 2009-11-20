@@ -6,12 +6,10 @@ import operator
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
-from mercurial import demandimport
-demandimport.disable()
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '2.0.1'
+__version__ = '2.1.0'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -104,7 +102,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
 
     request_id = opts['existing']
     if request_id:
-        update_review(request_id, ui, fields, diff, parentdiff)
+        update_review(request_id, ui, fields, diff, parentdiff, opts)
     else:
         request_id = new_review(ui, fields, diff, parentdiff, 
                                    opts)
@@ -127,23 +125,18 @@ def getdiff(ui, repo, r, parent):
         output += chunk
     return output
 
-def getreviewboard(ui):
+def getreviewboard(ui, opts):
     server = ui.config('reviewboard', 'server')
     
     reviewboard = ReviewBoard(server)
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
-    
-    username = ui.config('reviewboard', 'user')
+    username = opts.get('username') or ui.config('reviewboard', 'user')
     if username:
         ui.status('username: %s\n' % username)
-    else:
-        username = ui.prompt('username:')
-    password = ui.config('reviewboard', 'password')
+    password = opts.get('password') or ui.config('reviewboard', 'password')
     if password:
         ui.status('password: %s\n' % '**********')
-    else:
-        password = ui.getpass()
 
     try:
         reviewboard.login(username, password)
@@ -152,15 +145,15 @@ def getreviewboard(ui):
     
     return reviewboard
 
-def update_review(request_id, ui, fields, diff, parentdiff):
-    reviewboard = getreviewboard(ui)
+def update_review(request_id, ui, fields, diff, parentdiff, opts):
+    reviewboard = getreviewboard(ui, opts)
     try:
         reviewboard.update_request(request_id, fields, diff, parentdiff)
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
     
 def new_review(ui, fields, diff, parentdiff, opts):
-    reviewboard = getreviewboard(ui)
+    reviewboard = getreviewboard(ui, opts)
     
     repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
 
@@ -349,6 +342,8 @@ cmdtable = {
             _('comma separated list of people needed to review the code')),
         ('G', 'target_groups', '', 
             _('comma separated list of groups needed to review the code')),
+        ('', 'username', '', _('username for the ReviewBoard site')),
+        ('', 'password', '', _('password for the ReviewBoard site')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
