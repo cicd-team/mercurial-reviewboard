@@ -11,12 +11,13 @@ from reviewboard import ReviewBoard, ReviewBoardError
 
 __version__ = '3.0.0'
 
-def postreview(ui, repo, rev='tip', **opts):
+def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server
 
 This command creates a new review request on a Review Board server, or updates
 an existing review request, based on a changeset in the repository. If no
-revision number is specified the tip revision is used.
+revision number is specified the parent revision of the working directory is
+used.
 
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the

@@ -1,0 +1,21 @@
+# a clone of two revs with a working directory at revision 0
+
+pushd ../repo_tars
+
+tar xvf two_revs.tar
+
+hg clone two_revs/ two_revs_clone_not_tip
+
+pushd two_revs_clone_not_tip
+
+# add revisions for testing the -g flag
+
+hg up 0
+
+popd
+
+tar cvf two_revs_clone_not_tip.tar two_revs_clone_not_tip/
+
+rm -rf two_revs/
+rm -rf two_revs_clone_not_tip/
+
