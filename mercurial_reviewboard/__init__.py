@@ -9,7 +9,7 @@ from mercurial.i18n import _
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '2.1.0'
+__version__ = '3.0.0'
 
 def postreview(ui, repo, rev='tip', **opts):
     '''post a changeset to a Review Board server
@@ -149,6 +149,8 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui, opts)
     try:
         reviewboard.update_request(request_id, fields, diff, parentdiff)
+        if opts['publish']:
+            reviewboard.publish(request_id)
     except ReviewBoardError, msg:
         raise util.Abort(_(msg))
     

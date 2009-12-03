@@ -173,9 +173,6 @@ class ReviewBoard:
     def publish(self, id):
         self._api_post('api/json/reviewrequests/%s/publish/' % id)
 
-    def _save_draft(self, id):
-        rsp = self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
-
     def _api_post(self, url, fields=None, files=None):
         """
         Performs an API call using HTTP POST at the specified path.
@@ -283,5 +280,3 @@ class ReviewBoard:
         self._set_fields(id, fields)
         if diff:
             self._upload_diff(id, diff, parentdiff)
-        if fields or diff:
-            self._save_draft(id)
