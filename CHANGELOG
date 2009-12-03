@@ -3,6 +3,11 @@ Version 3.0.0 (TBD)
     * updates to existing reviews will no longer publish automatically
     
     use the -p flag to publish a review change immediately
+    
+    * changed default revision
+    
+    when you do not supply a revision explicitly, the default revision
+    is now the parent of the working directory rather than tip
 
 Version 2.1.0 (11/19/09)
 
