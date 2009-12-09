@@ -19,9 +19,10 @@ reviewboard = /path/to/reviewboard
 server          = http://reviewboard.example.com/
 
 # OPTIONAL ITEMS:
-# user            = ... # username for login
-# target_groups   = ... # default review groups
-# target_people   = ... # default review people
+# user              = ...  # username for login
+# target_groups     = ...  # default review groups
+# target_people     = ...  # default review people
+# launch_webbrowser = true # open review in a browser
 --- ~/.hgrc ---
 
 

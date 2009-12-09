@@ -33,3 +33,38 @@ class TestChangesetsOutput:
         postreview(ui, repo, **opts)
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
+        
+class TestLaunchBrowser:
+
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'webbrowser')
+    def test_browser_launch_default(self, mock_webbbrowser, mock_create_method):
+        ui = mock_ui()
+        
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        postreview(ui, repo, **opts)
+        assert mock_webbbrowser.open.called == False
+        
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'webbrowser')
+    def test_browser_launch_false(self, mock_webbbrowser, mock_create_method):
+        ui = mock_ui()
+        ui.setconfig('reviewboard', 'launch_webbrowser', 'false')
+        
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        postreview(ui, repo, **opts)
+        assert mock_webbbrowser.open.called == False
+        
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'webbrowser')
+    def test_browser_launch_true(self, mock_webbbrowser, mock_create_method):
+        ui = mock_ui()
+        ui.setconfig('reviewboard', 'launch_webbrowser', 'true')
+        
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        postreview(ui, repo, **opts)
+        assert mock_webbbrowser.open.called
+        
