@@ -49,7 +49,7 @@ class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
 
 
 class ReviewBoard:
-    def __init__(self, url):
+    def __init__(self, url, proxy=None):
         if not url.endswith('/'):
             url = url + '/'
         self.url       = url
@@ -64,7 +64,7 @@ class ReviewBoard:
         self._cj = cookielib.MozillaCookieJar(self.cookie_file)
         password_mgr = ReviewBoardHTTPPasswordMgr(self.url)
         self._opener = opener = urllib2.build_opener(
-                        urllib2.ProxyHandler(),
+                        urllib2.ProxyHandler(proxy),
                         urllib2.UnknownHandler(),
                         urllib2.HTTPHandler(),
                         urllib2.HTTPDefaultErrorHandler(),

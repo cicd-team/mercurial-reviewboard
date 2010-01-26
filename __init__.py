@@ -17,7 +17,10 @@ used.
 
 By default, the diff uploaded to the server is based on the parent of the
 revision to be reviewed. A different parent may be specified using the
---parent option.
+--parent or --longdiff options. --parent r specifies the revision to use on the
+left side while --longdiff looks at the upstream repository specified in .hg/hgrc
+to find a common ancestor to use on the left side. --parent may need one of
+the options below if the Review Board server can't see the parent.
 
 If the parent revision is not available to the Review Board server (e.g. it
 exists in your local repository but not in the one that Review Board has
@@ -26,13 +29,30 @@ to use for a parent diff. The --outgoing, --outgoingrepo or --master options
 may be used for this purpose. The --outgoing option is the simplest of these;
 it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
-this is not the case.
+this is not the case. In these cases two diffs are uploaded to Review Board:
+the first is the difference between Reviewboard's view of the repo and your
+parent revision(left side), the second is the difference between your parent
+revision and your review revision(right side). Only the second diff is
+under review. If you wish to review all the changes local to your repo use
+the --longdiff option above.
 '''
 
     server = ui.config('reviewboard', 'server')
     if not server:
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
+
+    '''We are going to fetch the setting string from hg prefs, there we can set
+    our own proxy, or specify 'none' to pass an empty dictionary to urllib2
+    which overides the default autodetection when we want to force no proxy'''
+    http_proxy = ui.config('reviewboard', 'http_proxy' )
+    if http_proxy:
+        if http_proxy == 'none':
+            proxy = {}
+        else:
+            proxy = { 'http':http_proxy }
+    else:
+        proxy=None
 
     def getdiff(ui, repo, r, parent):
         '''return diff for the specified revision'''
@@ -51,6 +71,11 @@ this is not the case.
     outgoingrepo = opts.get('outgoingrepo')
     master = opts.get('master')
     repo_id_opt = opts.get('repoid')
+    longdiff = opts.get('longdiff')
+
+    if not repo_id_opt:
+        repo_id_opt = ui.config('reviewboard','repoid')
+
 
     if master:
         rparent = repo[master]
@@ -58,8 +83,12 @@ this is not the case.
         rparent = remoteparent(ui, repo, rev, upstream=outgoingrepo)
     elif outgoing:
         rparent = remoteparent(ui, repo, rev)
+    elif longdiff:
+        parent = rparent = remoteparent(ui, repo, rev)
+        rparent = None
     else:
         rparent = None
+
 
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
@@ -98,7 +127,7 @@ this is not the case.
         if value:
             fields[field] = value
 
-    reviewboard = ReviewBoard(server)
+    reviewboard = ReviewBoard(server,proxy=proxy)
 
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
     ui.status('reviewboard:\t%s\n' % server)
@@ -192,6 +221,8 @@ cmdtable = {
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff')),
+        ('l','longdiff', False,
+         _('review all changes since last upstream sync')),
         ('U', 'target_people', [], _('comma separated list of people needed to review the code')),
         ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
         ('', 'username', '', _('username for the ReviewBoard site')),
