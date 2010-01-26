@@ -19,12 +19,28 @@ reviewboard = /path/to/reviewboard
 server          = http://reviewboard.example.com/
 
 # OPTIONAL ITEMS:
-# user              = ...  # username for login
-# target_groups     = ...  # default review groups
-# target_people     = ...  # default review people
+# user            = ... # username for login
+# password        = ...
+# target_groups   = ... # default review groups
+# target_people   = ... # default review people
 # launch_webbrowser = true # open review in a browser
+
+# For a specific proxy specify:
+# http_proxy = http://192.168.1.1:3128
+# For no proxy use
+# http_proxy = none
+# otherwise your proxy will be autodetected from the 'http_proxy' env var(unix)
+# or the registry(windows)
+
 --- ~/.hgrc ---
 
+Configure the Review Board reposity id for this Hg repo per in your per project
+mercurial prefs(.hg/hgrc).
+
+--- .hg/hgrc ---
+[reviewboard]
+repoid = n
+--- .hg/hgrc ---
 
 USAGE:
 

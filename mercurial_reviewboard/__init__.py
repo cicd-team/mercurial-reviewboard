@@ -132,9 +132,22 @@ def getdiff(ui, repo, r, parent):
     return output
 
 def getreviewboard(ui, opts):
+    
+    '''We are going to fetch the setting string from hg prefs, there we can set
+    our own proxy, or specify 'none' to pass an empty dictionary to urllib2
+    which overides the default autodetection when we want to force no proxy'''
+    http_proxy = ui.config('reviewboard', 'http_proxy' )
+    if http_proxy:
+        if http_proxy == 'none':
+            proxy = {}
+        else:
+            proxy = { 'http':http_proxy }
+    else:
+        proxy=None
+    
     server = ui.config('reviewboard', 'server')
     
-    reviewboard = ReviewBoard(server)
+    reviewboard = ReviewBoard(server, proxy)
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = opts.get('username') or ui.config('reviewboard', 'user')
@@ -177,6 +190,8 @@ def new_review(ui, fields, diff, parentdiff, opts):
 def find_reviewboard_repo_id(ui, reviewboard, opts):
     if opts.get('repoid'):
         return int(opts.get('repoid'))
+    elif ui.config('reviewboard','repoid'):
+        return int(ui.config('reviewboard','repoid'))
     
     try:
         repositories = reviewboard.repositories()

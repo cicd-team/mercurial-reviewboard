@@ -1,3 +1,17 @@
+Version 3.2.0 (1/26/10)
+
+    * merged in latest changes from parent project
+
+    changes included below
+
+    * disable the proxy auto detection
+
+    urlib2 does not seem to obey/follow the proxy exclusions
+
+    * added a 'repo_id' config variable 
+
+    Configure a reviewboard repo_id in the project .hg/hgrc file
+
 Version 3.1.0 (12/9/09)
 
     * added config option to automatically open reviews in a web browser
