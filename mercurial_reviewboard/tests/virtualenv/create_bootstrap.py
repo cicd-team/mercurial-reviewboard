@@ -19,6 +19,6 @@ def install_package(home_dir, package_name):
 
 if __name__ == '__main__':
     script = virtualenv.create_bootstrap_script(after_install)
-    file = open('bootstrap.py', 'w')
+    file = open('mercurial_reviewboard/tests/virtualenv/bootstrap.py', 'w')
     file.write(script)
     file.close()

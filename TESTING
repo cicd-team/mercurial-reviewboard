@@ -1,11 +1,31 @@
 RUNNING TESTS
+-------------
 
-In order to run the plugin tests, run:
+* WITHOUT VIRTUALENV
 
-    python bootstrap.py ENV --no-site-packages
+Install Python Mock, nose and Mercurial and run:
+
+    nosetests
+
+* WITH VIRTUALENV
+
+You can use virtualenv to set up a virtual environment for testing.  This
+is useful in environments such as automated continuous integration process,
+where you want to isolate yourself from the global python environment and
+pick up new dependencies automatically.
+
+In order to set up the plugin tests for the first time, install virtualenv
+and run:
+
+    python mercurial_reviewboard/tests/virtualenv/bootstrap.py ENV --no-site-packages
+
+In order to run the tests, run:
+
     ENV/bin/nosetests
     
+
 TEST DATA
+---------
 
 The test directory is structured like this:
 
