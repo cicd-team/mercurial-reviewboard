@@ -47,9 +47,12 @@ def mock_ui():
         mock.configitems = configitems_mock
         
         # set some default config values
-        mock.setconfig('reviewboard', 'server',   'http://rb')
+        mock.setconfig('reviewboard', 'server',   'http://example.com')
         mock.setconfig('reviewboard', 'user',     'foo')
         mock.setconfig('reviewboard', 'password', 'bar')
+        # probably best to prevent reading from the user's 
+        # hgrc but this should do for now
+        mock.setconfig('reviewboard', 'launch_webbrowser', 'false')
         
         def copy_side_effect():
             copy = ui.copy()
