@@ -53,7 +53,9 @@ class ReviewBoard:
         if not url.endswith('/'):
             url = url + '/'
         self.url       = url
-        if 'USERPROFILE' in os.environ:
+        if 'APPDATA' in os.environ:
+            homepath = os.environ["APPDATA"]
+        elif 'USERPROFILE' in os.environ:
             homepath = os.path.join(os.environ["USERPROFILE"], "Local Settings",
                                     "Application Data")
         elif 'HOME' in os.environ:
