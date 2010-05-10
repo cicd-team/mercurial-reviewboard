@@ -7,6 +7,7 @@ import mimetools
 import os
 import urllib2
 import simplejson
+import mercurial.ui
 from urlparse import urljoin, urlparse
 
 class APIError(Exception):
@@ -38,7 +39,7 @@ class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
                 print "==> HTTP Authentication Required"
                 print 'Enter username and password for "%s" at %s' % \
                     (realm, urlparse(uri)[1])
-                self.rb_user = raw_input('Username: ')
+                self.rb_user = mercurial.ui.ui().prompt('Username: ')
                 self.rb_pass = getpass.getpass('Password: ')
 
             return self.rb_user, self.rb_pass
@@ -72,7 +73,8 @@ class ReviewBoard:
                         urllib2.HTTPDefaultErrorHandler(),
                         urllib2.HTTPErrorProcessor(),
                         urllib2.HTTPCookieProcessor(self._cj),
-                        urllib2.HTTPBasicAuthHandler(password_mgr)
+                        urllib2.HTTPBasicAuthHandler(password_mgr),
+                        urllib2.HTTPDigestAuthHandler(password_mgr)
                         )
         urllib2.install_opener(self._opener)
         self._repositories = None
@@ -117,7 +119,7 @@ class ReviewBoard:
             return
 
         if not username:
-            username = raw_input('Username: ')
+            username = mercurial.ui.ui().prompt('Username: ')
         if not password:
             password = getpass.getpass('Password: ')
 
