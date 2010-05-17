@@ -232,7 +232,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
     
-    all_contexts = find_contexts(repo, parentc, c)
+    all_contexts = find_contexts(repo, parentc, c, opts)
 
     changesets_string = 'changesets:\n'
     changesets_string += \
@@ -331,14 +331,17 @@ def find_branch_parent(ui, ctx):
     
     return currctx
   
-def find_contexts(repo, parentctx, ctx):
+def find_contexts(repo, parentctx, ctx, opts):
     'Find all context between the contexts, excluding the parent context.'
     contexts = []
     for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
         currctx = repo[node]
+        if node == parentctx.node():
+            continue
         # only show nodes on the current branch
-        if node != parentctx.node():
-            contexts.append(currctx)
+        if opts['branch'] and currctx.branch() != ctx.branch():
+            continue
+        contexts.append(currctx)
     contexts.reverse()
     return contexts
 

@@ -1,0 +1,78 @@
+# sample graphlog at bottom
+
+pushd ../repo_tars
+
+hg init merge
+
+pushd merge
+
+echo a > a
+hg add
+hg commit -m 0 -u "john doe"
+
+echo b > b
+hg add
+hg commit -m 1 -u "john doe"
+
+echo c > c
+hg add
+hg commit -m 2 -u "john doe"
+
+hg up 0
+hg branch the_branch
+
+echo d > d
+hg add
+hg commit -m 3 -u "john doe"
+
+echo e > e
+hg add
+hg commit -m 4 -u "john doe"
+
+hg up default
+hg merge the_branch
+hg commit -m 5 -u "john doe"
+
+popd
+
+tar cvf merge.tar merge/
+
+rm -rf merge/
+
+# @    changeset:   5:1de20dbad49b
+# |\   tag:         tip
+# | |  parent:      2:e97ab41d91c8
+# | |  parent:      4:d955e65420c8
+# | |  user:        john doe
+# | |  date:        Mon May 17 12:38:59 2010 -0500
+# | |  summary:     5
+# | |
+# | o  changeset:   4:d955e65420c8
+# | |  branch:      the_branch
+# | |  user:        john doe
+# | |  date:        Mon May 17 12:38:58 2010 -0500
+# | |  summary:     4
+# | |
+# | o  changeset:   3:13a89135f389
+# | |  branch:      the_branch
+# | |  parent:      0:1d4da73b2570
+# | |  user:        john doe
+# | |  date:        Mon May 17 12:38:57 2010 -0500
+# | |  summary:     3
+# | |
+# o |  changeset:   2:e97ab41d91c8
+# | |  user:        john doe
+# | |  date:        Mon May 17 12:38:56 2010 -0500
+# | |  summary:     2
+# | |
+# o |  changeset:   1:7051d9f99104
+# |/   user:        john doe
+# |    date:        Mon May 17 12:38:55 2010 -0500
+# |    summary:     1
+# |
+# o  changeset:   0:1d4da73b2570
+#    user:        john doe
+#    date:        Mon May 17 12:38:55 2010 -0500
+#    summary:     0
+
+
