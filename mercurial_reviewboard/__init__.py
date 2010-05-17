@@ -323,6 +323,11 @@ def find_branch_parent(ui, ctx):
         currctx = getparent(currctx)
         ui.debug('currctx rev: %s; branch: %s\n' % (currctx.rev(), 
                                             currctx.branch()))
+                                            
+    # return the root of the repository if the first
+    # revision is on the branch
+    if not getparent(currctx) and currctx.branch() == branchname:
+        return currctx._repo['000000000000']
     
     return currctx
   

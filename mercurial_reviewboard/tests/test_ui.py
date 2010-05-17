@@ -34,6 +34,43 @@ class TestChangesetsOutput:
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
         
+class TestMerge:
+    
+    @patch_object(mercurial_reviewboard, 'new_review')
+    def test_changeset_shown(self, mock_create_method):
+        'status should show all revisions on all included branches'
+        expected_status = \
+            'changesets:\n\t5:1de20dbad49b "5"\n\t4:d955e65420c8 "4"'\
+            '\n\t3:13a89135f389 "3"\n\t2:e97ab41d91c8 "2"'\
+            '\n\t1:7051d9f99104 "1"\n\t0:1d4da73b2570 "0"\n\n'
+        
+        ui = mock_ui()
+        
+        repo = get_repo(ui, 'merge')
+        opts = get_initial_opts()
+        opts['parent'] = '000000'
+        postreview(ui, repo, **opts)
+        
+        eq_(expected_status, ui.status.call_args_list[1][0][0])
+        
+    @patch_object(mercurial_reviewboard, 'new_review')
+    def test_changeset_on_branch(self, mock_create_method):
+        'in branch mode only show revisions on branch'
+        expected_status = \
+            'review of branch: default\n\n'\
+            'changesets:\n\t5:1de20dbad49b "5"\n\t4:d955e65420c8 "4"'\
+            '\n\t3:13a89135f389 "3"\n\t2:e97ab41d91c8 "2"'\
+            '\n\t1:7051d9f99104 "1"\n\t0:1d4da73b2570 "0"\n\n'
+
+        ui = mock_ui()
+
+        repo = get_repo(ui, 'merge')
+        opts = get_initial_opts()
+        opts['branch'] = True
+        postreview(ui, repo, **opts)
+
+        eq_(expected_status, ui.status.call_args_list[1][0][0])
+        
 class TestLaunchBrowser:
 
     @patch_object(mercurial_reviewboard, 'new_review')
