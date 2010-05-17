@@ -330,8 +330,10 @@ def find_contexts(repo, parentctx, ctx):
     'Find all context between the contexts, excluding the parent context.'
     contexts = []
     for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
+        currctx = repo[node]
+        # only show nodes on the current branch
         if node != parentctx.node():
-            contexts.append(repo[node])
+            contexts.append(currctx)
     contexts.reverse()
     return contexts
 
