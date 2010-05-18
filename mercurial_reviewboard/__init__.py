@@ -10,7 +10,7 @@ from mercurial.i18n import _
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '3.1.0'
+__version__ = '3.2.1'
 
 def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server

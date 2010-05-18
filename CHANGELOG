@@ -1,3 +1,15 @@
+Version 3.2.1 (5/18/10)
+
+    * fixed bug using --branch flag
+    
+    when the first revision in the repository is on the branch,
+    the parent revision was '0' and not the root of the repository.
+    
+    * optimized change list with --branch flag
+    
+    when using the --branch flag, the change list will not display
+    revisions merged in from other branches
+
 Version 3.2.0 (1/26/10)
 
     * merged in latest changes from parent project
