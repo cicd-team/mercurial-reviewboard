@@ -330,9 +330,10 @@ def find_branch_parent(ui, ctx):
         return currctx._repo['000000000000']
     
     return currctx
-  
+
+
 def find_contexts(repo, parentctx, ctx, opts):
-    'Find all context between the contexts, excluding the parent context.'
+    """Find all context between the contexts, excluding the parent context."""
     contexts = []
     for node in repo.changelog.nodesbetween([parentctx.node()],[ctx.node()])[0]:
         currctx = repo[node]

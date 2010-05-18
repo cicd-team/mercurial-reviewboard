@@ -79,6 +79,8 @@ In order to run the plugin tests, run:
 
     python bootstrap.py ENV --no-site-packages
     ENV/bin/nosetests
+    
+See the TESTING file for more information.
 
 
 Copyright (C) 2008 Dennis Schoen <dennis.schoen@epublica.de>

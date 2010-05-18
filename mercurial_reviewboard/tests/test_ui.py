@@ -33,12 +33,13 @@ class TestChangesetsOutput:
         postreview(ui, repo, **opts)
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
-        
+
+
 class TestMerge:
     
     @patch_object(mercurial_reviewboard, 'new_review')
     def test_changeset_shown(self, mock_create_method):
-        'status should show all revisions on all included branches'
+        """status should show all revisions on all included branches"""
         expected_status = \
             'changesets:\n\t5:1de20dbad49b "5"'\
             '\n\t4:d955e65420c8 "4"\n\t3:13a89135f389 "3"'\
@@ -56,7 +57,7 @@ class TestMerge:
         
     @patch_object(mercurial_reviewboard, 'new_review')
     def test_changeset_on_branch(self, mock_create_method):
-        'in branch mode only show revisions on branch'
+        """in branch mode only show revisions on branch"""
         expected_status = \
             'review of branch: default\n\n'\
             'changesets:\n\t5:1de20dbad49b "5"'\
@@ -71,7 +72,8 @@ class TestMerge:
         postreview(ui, repo, **opts)
 
         eq_(expected_status, ui.status.call_args_list[1][0][0])
-        
+
+
 class TestLaunchBrowser:
 
     @patch_object(mercurial_reviewboard, 'new_review')
