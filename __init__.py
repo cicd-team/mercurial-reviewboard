@@ -2,7 +2,7 @@
 
 import os, errno, re
 import cStringIO
-from mercurial import cmdutil, hg, ui, mdiff, patch, util
+from mercurial import cmdutil, hg, ui, mdiff, patch, util, discovery
 from mercurial.i18n import _
 
 from reviewboard import ReviewBoard, ReviewBoardError
@@ -197,7 +197,10 @@ def remoteparent(ui, repo, rev, upstream=None):
     else:
         remotepath = ui.expandpath('default-push', 'default')
     remoterepo = hg.repository(ui, remotepath)
-    out = repo.findoutgoing(remoterepo)
+    try:
+        out = discovery.findoutgoing(repo, remoterepo)
+    except ImportError:
+        out = repo.findoutgoing(remoterepo)
     ancestors = repo.changelog.ancestors([repo.lookup(rev)])
     for o in out:
         orev = repo[o]
