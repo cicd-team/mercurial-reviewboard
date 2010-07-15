@@ -1,3 +1,19 @@
+Version 3.3.0 (7/16/10)
+
+    * fixed import issue for windows
+
+    some windows distributions don't include the "webbrowser" module
+
+    * merged in latest changes from parent project
+
+    changes included below
+    
+    * Mercurial 1.6 compatibility (also works with 1.4 and 1.5)
+    
+    * improved Windows compatibility
+    
+    * added support for HTTP Digest Auth
+
 Version 3.2.1 (5/18/10)
 
     * fixed bug using --branch flag

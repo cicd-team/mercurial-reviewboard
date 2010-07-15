@@ -295,7 +295,14 @@ def createfields(ui, repo, c, parentc, opts):
 def remoteparent(ui, repo, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
     remoterepo = hg.repository(ui, remotepath)
-    out = repo.findoutgoing(remoterepo)
+    
+    try:
+        from mercurial import discovery
+        out = discovery.findoutgoing(repo, remoterepo)
+    except ImportError:
+        # python <2.6 compatibility
+        out = repo.findoutgoing(remoterepo)
+    
     for o in out:
         orev = repo[o]
         a, b, c = repo.changelog.nodesbetween([orev.node()], [ctx.node()])
