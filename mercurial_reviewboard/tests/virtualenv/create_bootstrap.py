@@ -2,7 +2,8 @@ import virtualenv
 
 after_install = '''
 def after_install(options, home_dir):
-    install_package(home_dir, 'Mercurial')
+    hg_version = os.environ.get('HG_VERSION','Mercurial')
+    install_package(home_dir, hg_version)
     install_package(home_dir, 'mock')
     install_package(home_dir, 'nose')
 
