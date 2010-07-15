@@ -3,7 +3,6 @@
 import os, errno, re, sys
 import cStringIO
 import operator
-import webbrowser
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
@@ -121,8 +120,15 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     ui.status(msg % request_url)
     
     if ui.configbool('reviewboard', 'launch_webbrowser'):
-        ui.status('browser launched\n')
-        webbrowser.open(request_url)
+        launch_webbrowser(ui, request_url)
+        
+def launch_webbrowser(ui, request_url):
+    # not all python installations have this module, so only import it
+    # when it's used
+    import webbrowser
+    
+    ui.status('browser launched\n')
+    webbrowser.open(request_url)
     
 def getdiff(ui, repo, r, parent):
     '''return diff for the specified revision'''
