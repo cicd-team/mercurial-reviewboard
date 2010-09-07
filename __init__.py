@@ -142,13 +142,13 @@ the --longdiff option above.
     try:
         reviewboard.login(username, password)
     except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+        raise util.Abort(_(str(msg)))
 
     if request_id:
         try:
             reviewboard.update_request(request_id, fields, diff, parentdiff)
         except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
+            raise util.Abort(_(str(msg)))
     else:
         if repo_id_opt:
             repo_id = int(repo_id_opt)
@@ -156,7 +156,7 @@ the --longdiff option above.
             try:
                 repositories = reviewboard.repositories()
             except ReviewBoardError, msg:
-                raise util.Abort(_(msg))
+                raise util.Abort(_(str(msg)))
 
             if not repositories:
                 raise util.Abort(_('no repositories configured at %s' % server))
@@ -179,7 +179,7 @@ the --longdiff option above.
             if opts.get('publish'):
                 reviewboard.publish(request_id)
         except ReviewBoardError, msg:
-            raise util.Abort(_(msg))
+            raise util.Abort(_(str(msg)))
 
     request_url = '%s/%s/%s/' % (server, "r", request_id)
 
