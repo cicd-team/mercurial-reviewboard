@@ -84,11 +84,10 @@ the --longdiff option above.
     elif outgoing:
         rparent = remoteparent(ui, repo, rev)
     elif longdiff:
-        parent = rparent = remoteparent(ui, repo, rev)
+        parent = remoteparent(ui, repo, rev)
         rparent = None
     else:
         rparent = None
-
 
     ui.debug(_('Parent is %s\n' % parent))
     ui.debug(_('Remote parent is %s\n' % rparent))
