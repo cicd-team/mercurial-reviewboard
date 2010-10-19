@@ -48,6 +48,11 @@ this is not the case.
     rparent = find_rparent(ui, repo, c, opts)        
     parent  = find_parent(ui, repo, c, rparent, opts)
 
+    if parent is None:
+        raise Exception("Unable to determine parent revision for diff. "
+                        "Did you forget to commit your changes?")
+        
+
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
     send_review(ui, repo, c, parent, diff, parentdiff, opts)
