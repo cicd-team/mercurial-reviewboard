@@ -41,6 +41,7 @@ def test_no_outgoing_no_revs(mock_send):
         opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/no_revs'
         opts['outgoingchanges'] = True
         postreview(ui, repo, **opts)
+        assert 0, "Should have raised an Abort."
     except util.Abort, e:
         check_parent_rev_exception(e)
 
@@ -53,6 +54,7 @@ def test_no_outgoing_two_revs(mock_send):
         opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/two_revs'
         opts['outgoingchanges'] = True
         postreview(ui, repo, **opts)
+        assert 0, "Should have raised an Abort."
     except util.Abort, e:
         check_parent_rev_exception(e)
 
