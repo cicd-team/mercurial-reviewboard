@@ -125,7 +125,10 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
 def launch_webbrowser(ui, request_url):
     # not all python installations have this module, so only import it
     # when it's used
+    from mercurial import demandimport
+    demandimport.disable()
     import webbrowser
+    demandimport.enable()
     
     ui.status('browser launched\n')
     webbrowser.open(request_url)
