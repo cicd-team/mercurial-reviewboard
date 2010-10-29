@@ -60,7 +60,7 @@ def test_no_outgoing_two_revs(mock_send):
 
 def check_parent_rev_exception(e):
     eq_("Unable to determine parent revision for diff. "
-        "Make sure you have committed changes (type 'hg st') if using -g/"
-        "--outgoingchanges.",
+        "If using -g/--outgoingchanges, make sure you have some "
+        "(type 'hg out'). Or did you forget to commit ('hg st')?",
         e.__str__()
     )

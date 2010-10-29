@@ -49,10 +49,11 @@ this is not the case.
     parent  = find_parent(ui, repo, c, rparent, opts)
 
     if parent is None:
-        raise util.Abort(
-            "Unable to determine parent revision for diff. "
-            "Make sure you have committed changes (type 'hg st') if using -g/"
-            "--outgoingchanges.")
+        msg = "Unable to determine parent revision for diff. "
+        if opts.get('outgoingchanges'):
+            msg += _("If using -g/--outgoingchanges, make sure you have some "
+                     "(type 'hg out'). Or did you forget to commit ('hg st')?")
+        raise util.Abort(msg)
 
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
