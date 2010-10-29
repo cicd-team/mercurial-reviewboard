@@ -9,7 +9,7 @@ from mercurial.i18n import _
 
 from reviewboard import ReviewBoard, ReviewBoardError
 
-__version__ = '3.2.1'
+__version__ = '3.3.1'
 
 def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server
@@ -132,7 +132,10 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
 def launch_webbrowser(ui, request_url):
     # not all python installations have this module, so only import it
     # when it's used
+    from mercurial import demandimport
+    demandimport.disable()
     import webbrowser
+    demandimport.enable()
     
     ui.status('browser launched\n')
     webbrowser.open(request_url)
