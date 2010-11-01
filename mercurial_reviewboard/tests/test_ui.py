@@ -1,4 +1,4 @@
-from mock import Mock, patch
+from mock import Mock, patch_object
 from nose.tools import eq_
 
 import mercurial_reviewboard
@@ -10,7 +10,7 @@ class TestChangesetsOutput:
     expected_status = \
         'changesets:\n\t1:669e757d4a24 "1"\n\t0:a8ea53640b24 "0"\n\n'
 
-    @patch.object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'new_review')
     def test_changeset_shown(self, mock_create_method):
         ui = mock_ui()
         
@@ -21,7 +21,7 @@ class TestChangesetsOutput:
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
         
-    @patch.object(mercurial_reviewboard, 'update_review')
+    @patch_object(mercurial_reviewboard, 'update_review')
     def test_changeset_shown_on_existing(self, mock_create_method):
         ui = mock_ui()
         
@@ -37,7 +37,7 @@ class TestChangesetsOutput:
 
 class TestMerge:
     
-    @patch.object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'new_review')
     def test_changeset_shown(self, mock_create_method):
         """status should show all revisions on all included branches"""
         expected_status = \
@@ -55,7 +55,7 @@ class TestMerge:
         
         eq_(expected_status, ui.status.call_args_list[1][0][0])
         
-    @patch.object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'new_review')
     def test_changeset_on_branch(self, mock_create_method):
         """in branch mode only show revisions on branch"""
         expected_status = \
@@ -76,8 +76,8 @@ class TestMerge:
 
 class TestLaunchBrowser:
 
-    @patch.object(mercurial_reviewboard, 'new_review')
-    @patch.object(mercurial_reviewboard, 'launch_webbrowser')
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'launch_webbrowser')
     def test_browser_launch_default(self, mock_launch, mock_create_method):
         ui = mock_ui()
         
@@ -86,8 +86,8 @@ class TestLaunchBrowser:
         postreview(ui, repo, **opts)
         assert mock_launch.called == False
         
-    @patch.object(mercurial_reviewboard, 'new_review')
-    @patch.object(mercurial_reviewboard, 'launch_webbrowser')
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'launch_webbrowser')
     def test_browser_launch_false(self, mock_launch, mock_create_method):
         ui = mock_ui()
         ui.setconfig('reviewboard', 'launch_webbrowser', 'false')
@@ -97,8 +97,8 @@ class TestLaunchBrowser:
         postreview(ui, repo, **opts)
         assert mock_launch.called == False
         
-    @patch.object(mercurial_reviewboard, 'new_review')
-    @patch.object(mercurial_reviewboard, 'launch_webbrowser')
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'launch_webbrowser')
     def test_browser_launch_true(self, mock_launch, mock_create_method):
         ui = mock_ui()
         ui.setconfig('reviewboard', 'launch_webbrowser', 'true')
