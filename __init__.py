@@ -5,7 +5,7 @@ import cStringIO
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
 
-from reviewboard import ReviewBoard, ReviewBoardError
+from reviewboard import make_rbclient, ReviewBoardError
 
 def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server
@@ -80,7 +80,6 @@ repository accessible to Review Board is not the upstream repository.
     if not repo_id_opt:
         repo_id_opt = ui.config('reviewboard','repoid')
 
-
     if master:
         rparent = repo[master]
     elif outgoingrepo:
@@ -130,7 +129,7 @@ repository accessible to Review Board is not the upstream repository.
         if value:
             fields[field] = value
 
-    reviewboard = ReviewBoard(server,proxy=proxy)
+    reviewboard = make_rbclient(server, proxy=proxy)
 
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
     ui.status('reviewboard:\t%s\n' % server)
@@ -167,14 +166,14 @@ repository accessible to Review Board is not the upstream repository.
             ui.status('Repositories:\n')
             repo_ids = set()
             for r in repositories:
-                ui.status('[%s] %s\n' % (r['id'], r['name']) )
-                repo_ids.add(str(r['id']))
+                ui.status('[%s] %s\n' % (r.id, r.name) )
+                repo_ids.add(str(r.id))
             if len(repositories) > 1:
                 repo_id = ui.prompt('repository id:', 0)
                 if not repo_id in repo_ids:
                     raise util.Abort(_('invalid repository ID: %s') % repo_id)
             else:
-                repo_id = repositories[0]['id']
+                repo_id = repositories[0].id
                 ui.status('repository id: %s\n' % repo_id)
 
         try:

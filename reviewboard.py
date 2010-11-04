@@ -16,6 +16,16 @@ class APIError(Exception):
 class ReviewBoardError(Exception):
     pass
 
+class Repository:
+    """
+    Represents a ReviewBoard repository
+    """
+    def __init__(self, id, name, tool, path):
+        self.id = id
+        self.name = name
+        self.tool = tool
+        self.path = path
+
 class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
     """
     Adds HTTP authentication support for URLs.
@@ -48,8 +58,18 @@ class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
             # handlers are global), fall back to standard password management.
             return urllib2.HTTPPasswordMgr.find_user_password(self, realm, uri)
 
+class ApiRequest(urllib2.Request):
+    """
+    Allows HTTP methods other than GET and POST to be used
+    """
+    def __init__(self, method, *args, **kwargs):
+        self._method = method
+        urllib2.Request.__init__(self, *args, **kwargs)
 
-class ReviewBoard:
+    def get_method(self):
+        return self._method
+
+class HttpClient:
     def __init__(self, url, proxy=None):
         if not url.endswith('/'):
             url = url + '/'
@@ -77,8 +97,18 @@ class ReviewBoard:
                         urllib2.HTTPDigestAuthHandler(password_mgr)
                         )
         urllib2.install_opener(self._opener)
-        self._repositories = None
-        self._requests = None
+
+    def api_request(self, method, url, fields=None, files=None):
+        """
+        Performs an API call using an HTTP request at the specified path.
+        """
+        try:
+            return self._process_json(self._http_request(method, url, fields,
+                                      files))
+        except APIError, e:
+            rsp, = e.args
+            raise ReviewBoardError, ("%s (%s)" % \
+                                    (rsp["err"]["msg"], rsp["err"]["code"]) )
 
     def has_valid_cookie(self):
         """
@@ -114,99 +144,24 @@ class ReviewBoard:
 
         return False
 
-    def login(self, username=None, password=None):
-        if not username and not password and self.has_valid_cookie():
-            return
-
-        if not username:
-            username = mercurial.ui.ui().prompt('Username: ')
-        if not password:
-            password = getpass.getpass('Password: ')
-
-        self._api_post('/api/json/accounts/login/', {
-            'username': username,
-            'password': password,
-        })
-
-    def repositories(self):
-        if not self._repositories:
-            rsp = self._api_post('/api/json/repositories/')
-            self._repositories = rsp['repositories']
-        return self._repositories
-
-    def requests(self):
-        if not self._requests:
-            rsp = self._api_post('/api/json/reviewrequests/all/')
-            self._requests = rsp['review_requests']
-        return self._requests
-
-    def users(self):
-        rsp = self._api_post('/api/json/users/')
-        self.users = rsp['users']
-        return self.users
-
-    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
-        repository_path = None
-        for r in self.repositories():
-            if r['id'] == int(repo_id):
-                repository_path = r['path']
-                break
-        if not repository_path:
-            raise ReviewBoardError, ("can't find repository with id: %s" % \
-                                        repo_id)
-
-        id = self._create_request(repository_path)
-
-        self._set_request_details(id, fields, diff, parentdiff)
-
-        return id
-
-    def update_request(self, id, fields={}, diff='', parentdiff=''):
-        request_id = None
-        for r in self.requests():
-            if r['id'] == int(id):
-                request_id = int(id)
-                break
-        if not request_id:
-            raise ReviewBoardError, ("can't find request with id: %s" % id)
-
-        self._set_request_details(request_id, fields, diff, parentdiff)
-
-        return request_id
-
-    def publish(self, id):
-        self._api_post('api/json/reviewrequests/%s/publish/' % id)
-
-    def _save_draft(self, id):
-        rsp = self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
-
-    def _api_post(self, url, fields=None, files=None):
+    def _http_request(self, method, path, fields, files):
         """
-        Performs an API call using HTTP POST at the specified path.
-        """
-        try:
-            return self._process_json( self._http_post(url, fields, files) )
-        except APIError, e:
-            rsp, = e.args
-
-            raise ReviewBoardError, ("%s (%s)" % \
-                                    (rsp["err"]["msg"], rsp["err"]["code"]) )
-
-    def _http_post(self, path, fields, files=None):
-        """
-        Performs an HTTP POST on the specified path.
+        Performs an HTTP request on the specified path.
         """
         if path.startswith('/'):
             path = path[1:]
         url = urljoin(self.url, path)
-        content_type, body = self._encode_multipart_formdata(fields, files)
-        headers = {
-            'Content-Type': content_type,
-            'Content-Length': str(len(body))
-        }
+        body = None
+        headers = {}
+        if fields or files:
+            content_type, body = self._encode_multipart_formdata(fields, files)
+            headers = {
+                'Content-Type': content_type,
+                'Content-Length': str(len(body))
+                }
 
         try:
-            r = urllib2.Request(url, body, headers)
+            r = ApiRequest(method, url, body, headers)
             data = urllib2.urlopen(r).read()
             self._cj.save(self.cookie_file)
             return data
@@ -261,6 +216,86 @@ class ReviewBoard:
 
         return content_type, content
 
+class ApiClient:
+    def __init__(self, httpclient):
+        self._httpclient = httpclient
+
+    def _api_request(self, method, url, fields=None, files=None):
+        return self._httpclient.api_request(method, url, fields, files)
+
+class Api10Client(ApiClient):
+    """
+    Implements the 1.0 version of the API
+    """
+
+    def __init__(self, httpclient):
+        ApiClient.__init__(self, httpclient)
+        self._repositories = None
+        self._requests = None
+
+    def _api_post(self, url, fields=None, files=None):
+        return self._api_request('POST', url, fields, files)
+
+    def login(self, username=None, password=None):
+        if not username and not password and self.client.has_valid_cookie():
+            return
+
+        if not username:
+            username = mercurial.ui.ui().prompt('Username: ')
+        if not password:
+            password = getpass.getpass('Password: ')
+
+        self._api_post('/api/json/accounts/login/', {
+            'username': username,
+            'password': password,
+        })
+
+    def repositories(self):
+        if not self._repositories:
+            rsp = self._api_post('/api/json/repositories/')
+            self._repositories = [Repository(r['id'], r['name'], r['tool'],
+                                             r['path'])
+                                  for r in rsp['repositories']]
+        return self._repositories
+
+    def requests(self):
+        if not self._requests:
+            rsp = self._api_post('/api/json/reviewrequests/all/')
+            self._requests = rsp['review_requests']
+        return self._requests
+
+    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
+        repository_path = None
+        for r in self.repositories():
+            if r.id == int(repo_id):
+                repository_path = r.path
+                break
+        if not repository_path:
+            raise ReviewBoardError, ("can't find repository with id: %s" % \
+                                        repo_id)
+
+        id = self._create_request(repository_path)
+
+        self._set_request_details(id, fields, diff, parentdiff)
+
+        return id
+
+    def update_request(self, id, fields={}, diff='', parentdiff=''):
+        request_id = None
+        for r in self.requests():
+            if r['id'] == int(id):
+                request_id = int(id)
+                break
+        if not request_id:
+            raise ReviewBoardError, ("can't find request with id: %s" % id)
+
+        self._set_request_details(request_id, fields, diff, parentdiff)
+
+        return request_id
+
+    def publish(self, id):
+        self._api_post('api/json/reviewrequests/%s/publish/' % id)
+
     def _create_request(self, repository_path):
         data = { 'repository_path': repository_path }
         rsp = self._api_post('/api/json/reviewrequests/new/', data)
@@ -289,3 +324,10 @@ class ReviewBoard:
             self._upload_diff(id, diff, parentdiff)
         if fields or diff:
             self._save_draft(id)
+
+    def _save_draft(self, id):
+        self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
+
+def make_rbclient(url, proxy=None):
+    httpclient = HttpClient(url, proxy)
+    return Api10Client(httpclient)
