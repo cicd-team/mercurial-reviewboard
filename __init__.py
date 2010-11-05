@@ -109,6 +109,7 @@ repository accessible to Review Board is not the upstream repository.
     if opts.get('update') or not request_id:
         fields['summary']       = c.description().splitlines()[0]
         fields['description']   = c.description()
+        fields['branch']        = c.branch()
 
     diff = getdiff(ui, repo, c, parent)
     ui.debug('\n=== Diff from parent to rev ===\n')
