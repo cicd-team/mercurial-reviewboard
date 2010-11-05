@@ -14,7 +14,24 @@ class APIError(Exception):
     pass
 
 class ReviewBoardError(Exception):
-    pass
+    def __init__(self, json=None):
+        self.msg = None
+        self.code = None
+        self.tags = {}
+
+        if json:
+            self.msg = json['err']['msg']
+            self.code = json['err']['code']
+            for key, value in json.items():
+                if isinstance(value,unicode) or isinstance(value,str):
+                    self.tags[key] = value
+
+    def __str__(self):
+        if self.msg:
+            return ("%s (%s)" % (self.msg, self.code)) + \
+                ''.join([("\n%s: %s" % (k, v)) for k,v in self.tags.items()])
+        else:
+            return Exception.__str__(self)
 
 class Repository:
     """
@@ -107,8 +124,7 @@ class HttpClient:
                                       files))
         except APIError, e:
             rsp, = e.args
-            raise ReviewBoardError, ("%s (%s)" % \
-                                    (rsp["err"]["msg"], rsp["err"]["code"]) )
+            raise ReviewBoardError(rsp)
 
     def has_valid_cookie(self):
         """
