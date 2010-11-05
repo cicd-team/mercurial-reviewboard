@@ -35,6 +35,10 @@ parent revision(left side), the second is the difference between your parent
 revision and your review revision(right side). Only the second diff is
 under review. If you wish to review all the changes local to your repo use
 the --longdiff option above.
+
+The --outgoing option recognizes the path entries 'reviewboard', 'default-push'
+and 'default' in this order of precedence. 'reviewboard' may be used if the
+repository accessible to Review Board is not the upstream repository.
 '''
 
     server = ui.config('reviewboard', 'server')
@@ -194,7 +198,8 @@ def remoteparent(ui, repo, rev, upstream=None):
     if upstream:
         remotepath = ui.expandpath(upstream)
     else:
-        remotepath = ui.expandpath('default-push', 'default')
+        remotepath = ui.expandpath(ui.expandpath('reviewboard', 'default-push'),
+                                   'default')
     remoterepo = hg.repository(ui, remotepath)
     try:
         # from Mercurial 1.6
