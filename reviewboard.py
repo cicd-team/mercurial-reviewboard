@@ -19,9 +19,17 @@ class ReviewBoardError(Exception):
         self.code = None
         self.tags = {}
 
+        if isinstance(json, str) or isinstance(json, unicode):
+            try:
+                json = simplejson.loads(json)
+            except:
+                self.msg = json
+                return
+
         if json:
-            self.msg = json['err']['msg']
-            self.code = json['err']['code']
+            if json.has_key('err'):
+                self.msg = json['err']['msg']
+                self.code = json['err']['code']
             for key, value in json.items():
                 if isinstance(value,unicode) or isinstance(value,str):
                     self.tags[key] = value
@@ -59,6 +67,10 @@ class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
         self.rb_url  = reviewboard_url
         self.rb_user = None
         self.rb_pass = None
+
+    def set_credentials(self, username, password):
+        self.rb_user = username
+        self.rb_pass = password
 
     def find_user_password(self, realm, uri):
         if uri.startswith(self.rb_url):
@@ -102,7 +114,7 @@ class HttpClient:
             homepath = ''
         self.cookie_file = os.path.join(homepath, ".post-review-cookies.txt")
         self._cj = cookielib.MozillaCookieJar(self.cookie_file)
-        password_mgr = ReviewBoardHTTPPasswordMgr(self.url)
+        self._password_mgr = ReviewBoardHTTPPasswordMgr(self.url)
         self._opener = opener = urllib2.build_opener(
                         urllib2.ProxyHandler(proxy),
                         urllib2.UnknownHandler(),
@@ -110,18 +122,24 @@ class HttpClient:
                         urllib2.HTTPDefaultErrorHandler(),
                         urllib2.HTTPErrorProcessor(),
                         urllib2.HTTPCookieProcessor(self._cj),
-                        urllib2.HTTPBasicAuthHandler(password_mgr),
-                        urllib2.HTTPDigestAuthHandler(password_mgr)
+                        urllib2.HTTPBasicAuthHandler(self._password_mgr),
+                        urllib2.HTTPDigestAuthHandler(self._password_mgr)
                         )
         urllib2.install_opener(self._opener)
+
+    def set_credentials(self, username, password):
+        self._password_mgr.set_credentials(username, password)
 
     def api_request(self, method, url, fields=None, files=None):
         """
         Performs an API call using an HTTP request at the specified path.
         """
         try:
-            return self._process_json(self._http_request(method, url, fields,
-                                      files))
+            rsp = self._http_request(method, url, fields, files)
+            if rsp:
+                return self._process_json(rsp)
+            else:
+                return None
         except APIError, e:
             rsp, = e.args
             raise ReviewBoardError(rsp)
@@ -182,11 +200,12 @@ class HttpClient:
             self._cj.save(self.cookie_file)
             return data
         except urllib2.URLError, e:
-            raise ReviewBoardError, ("Unable to access %s.\n%s" % \
-                    (url, e))
+            if e.code >= 400:
+                raise ReviewBoardError(e.read())
+            else:
+                return ""
         except urllib2.HTTPError, e:
-            raise ReviewBoardError, ("Unable to access %s (%s).\n%s" % \
-                    (url, e.code, e.read()))
+            raise ReviewBoardError(e.read())
 
     def _process_json(self, data):
         """
@@ -238,6 +257,69 @@ class ApiClient:
 
     def _api_request(self, method, url, fields=None, files=None):
         return self._httpclient.api_request(method, url, fields, files)
+
+class Api20Client(ApiClient):
+    """
+    Implements the 2.0 version of the API
+    """
+
+    def __init__(self, httpclient):
+        ApiClient.__init__(self, httpclient)
+        self._repositories = None
+        self._requestcache = {}
+
+    def login(self, username=None, password=None):
+        self._httpclient.set_credentials(username, password)
+        return
+
+    def repositories(self):
+        if not self._repositories:
+            rsp = self._api_request('GET', '/api/repositories/?max-results=500')
+            self._repositories = [Repository(r['id'], r['name'], r['tool'],
+                                             r['path'])
+                                  for r in rsp['repositories']]
+        return self._repositories
+
+    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
+        req = self._create_request(repo_id)
+        self._set_request_details(req, fields, diff, parentdiff)
+        self._requestcache[req['id']] = req
+        return req['id']
+
+    def update_request(self, id, fields={}, diff='', parentdiff=''):
+        req = self._get_request(id)
+        self._set_request_details(req, fields, diff, parentdiff)
+        self.publish(id)
+
+    def publish(self, id):
+        req = self._get_request(id)
+        drafturl = req['links']['draft']['href']
+        self._api_request('PUT', drafturl, {'public':'1'})
+
+    def _create_request(self, repo_id):
+        data = { 'repository': repo_id }
+        result = self._api_request('POST', '/api/review-requests/', data)
+        return result['review_request']
+
+    def _get_request(self, id):
+        if self._requestcache.has_key(id):
+            return self._requestcache[id]
+        else:
+            result = self._api_request('GET', '/api/review-requests/%s/' % id)
+            self._requestcache[id] = result['review_request']
+            return result['review_request']
+
+    def _set_request_details(self, req, fields, diff, parentdiff):
+        if fields:
+            drafturl = req['links']['draft']['href']
+            self._api_request('PUT', drafturl, fields)
+        if diff:
+            diffurl = req['links']['diffs']['href']
+            data = {'path': {'filename': 'diff', 'content': diff}}
+            if parentdiff:
+                data['parent_diff_path'] = \
+                    {'filename': 'parent_diff', 'content': parentdiff}
+            self._api_request('POST', diffurl, {}, data)
 
 class Api10Client(ApiClient):
     """
@@ -344,6 +426,30 @@ class Api10Client(ApiClient):
     def _save_draft(self, id):
         self._api_post("/api/json/reviewrequests/%s/draft/save/" % id )
 
-def make_rbclient(url, proxy=None):
+def make_rbclient(url, username, password, proxy=None, apiver=''):
     httpclient = HttpClient(url, proxy)
-    return Api10Client(httpclient)
+
+    if not username:
+        username = mercurial.ui.ui().prompt('Username: ')
+    if not password:
+        password = getpass.getpass('Password: ')
+
+    httpclient.set_credentials(username, password)
+
+    if not apiver:
+        # Figure out whether the server supports API version 2.0
+        try:
+            httpclient.api_request('GET', '/api/info/')
+            apiver = '2.0'
+        except:
+            apiver = '1.0'
+            pass
+
+    if apiver == '2.0':
+        return Api20Client(httpclient)
+    elif apiver == '1.0':
+        cli = Api10Client(httpclient)
+        cli.login(username, password)
+        return cli
+    else:
+        raise Exception("Unsupported API version: %s" % apiver)

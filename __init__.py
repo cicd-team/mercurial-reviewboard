@@ -130,8 +130,6 @@ repository accessible to Review Board is not the upstream repository.
         if value:
             fields[field] = value
 
-    reviewboard = make_rbclient(server, proxy=proxy)
-
     ui.status('changeset:\t%s:%s "%s"\n' % (rev, c, c.description()) )
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
@@ -143,9 +141,10 @@ repository accessible to Review Board is not the upstream repository.
         ui.status('password: %s\n' % '**********')
 
     try:
-        reviewboard.login(username, password)
-    except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        reviewboard = make_rbclient(server, username, password, proxy=proxy,
+                                    apiver=opts.get('apiver'))
+    except Exception, e:
+        raise util.Abort(_(str(e)))
 
     if request_id:
         try:
@@ -236,6 +235,7 @@ cmdtable = {
         ('G', 'target_groups', [], _('comma separated list of groups needed to review the code')),
         ('', 'username', '', _('username for the ReviewBoard site')),
         ('', 'password', '', _('password for the ReviewBoard site')),
+        ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
