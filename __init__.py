@@ -41,7 +41,10 @@ and 'default' in this order of precedence. 'reviewboard' may be used if the
 repository accessible to Review Board is not the upstream repository.
 '''
 
-    server = ui.config('reviewboard', 'server')
+    server = opts.get('server')
+    if not server:
+        server = ui.config('reviewboard', 'server')
+
     if not server:
         raise util.Abort(
                 _('please specify a reviewboard server in your .hgrc file') )
@@ -225,6 +228,7 @@ cmdtable = {
          _('specify repository id on reviewboard server')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
+        ('', 'server', '', _('ReviewBoard server URL')),
         ('e', 'existing', '', _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
