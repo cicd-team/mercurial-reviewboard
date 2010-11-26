@@ -31,7 +31,8 @@ class ReviewBoardError(Exception):
                 self.msg = json['err']['msg']
                 self.code = json['err']['code']
             for key, value in json.items():
-                if isinstance(value,unicode) or isinstance(value,str):
+                if isinstance(value,unicode) or isinstance(value,str) or \
+                    key == 'fields':
                     self.tags[key] = value
 
     def __str__(self):
@@ -200,6 +201,8 @@ class HttpClient:
             self._cj.save(self.cookie_file)
             return data
         except urllib2.URLError, e:
+            if not hasattr(e, 'code'):
+                raise
             if e.code >= 400:
                 raise ReviewBoardError(e.read())
             else:

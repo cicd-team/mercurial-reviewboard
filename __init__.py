@@ -176,7 +176,7 @@ repository accessible to Review Board is not the upstream repository.
                 if not repo_id in repo_ids:
                     raise util.Abort(_('invalid repository ID: %s') % repo_id)
             else:
-                repo_id = repositories[0].id
+                repo_id = str(repositories[0].id)
                 ui.status('repository id: %s\n' % repo_id)
 
         try:
