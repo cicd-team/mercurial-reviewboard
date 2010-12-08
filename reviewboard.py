@@ -99,6 +99,21 @@ class ApiRequest(urllib2.Request):
     def get_method(self):
         return self._method
 
+class HttpErrorHandler(urllib2.HTTPDefaultErrorHandler):
+    """
+    Error handler that doesn't throw an exception for any code below 400.
+    This is necessary because RB returns 2xx codes other than 200 to indicate
+    success.
+    """
+    def http_error_default(self, req, fp, code, msg, hdrs):
+        if code >= 400:
+            return urllib2.HTTPDefaultErrorHandler(self, req, fp, code, msg,
+                                                   hdrs)
+        else:
+            result = urllib2.HTTPError( req.get_full_url(), code, msg, hdrs, fp)
+            result.status = code
+            return result
+
 class HttpClient:
     def __init__(self, url, proxy=None):
         if not url.endswith('/'):
@@ -120,7 +135,7 @@ class HttpClient:
                         urllib2.ProxyHandler(proxy),
                         urllib2.UnknownHandler(),
                         urllib2.HTTPHandler(),
-                        urllib2.HTTPDefaultErrorHandler(),
+                        HttpErrorHandler(),
                         urllib2.HTTPErrorProcessor(),
                         urllib2.HTTPCookieProcessor(self._cj),
                         urllib2.HTTPBasicAuthHandler(self._password_mgr),
