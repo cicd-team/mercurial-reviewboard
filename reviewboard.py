@@ -107,8 +107,8 @@ class HttpErrorHandler(urllib2.HTTPDefaultErrorHandler):
     """
     def http_error_default(self, req, fp, code, msg, hdrs):
         if code >= 400:
-            return urllib2.HTTPDefaultErrorHandler(self, req, fp, code, msg,
-                                                   hdrs)
+            return urllib2.HTTPDefaultErrorHandler.http_error_default(self,
+                req, fp, code, msg, hdrs)
         else:
             result = urllib2.HTTPError( req.get_full_url(), code, msg, hdrs, fp)
             result.status = code
