@@ -273,7 +273,11 @@ def createfields(ui, repo, c, parentc, opts):
     if opts['update'] or not request_id:
         
         # summary
-        default_summary = c.description().splitlines()[0]
+        if opts["summary"]:
+            default_summary = opts["summary"]
+        else:
+            default_summary = c.description().splitlines()[0]
+        
         if interactive:
             ui.status('default summary: %s\n' % default_summary)
             ui.status('enter summary (or return for default):\n') 
@@ -394,6 +398,7 @@ cmdtable = {
          _('use specified repository to determine the parent diff base')),
         ('i', 'repoid', '',
          _('specify repository id on reviewboard server')),
+        ('s', 'summary', '', _('specify a summary for the review request')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
         ('', 'server', '', _('ReviewBoard server URL')),
