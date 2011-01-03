@@ -212,7 +212,7 @@ def new_review(ui, fields, diff, parentdiff, opts):
 
 def find_reviewboard_repo_id(ui, reviewboard, opts):
     if opts.get('repoid'):
-        return int(opts.get('repoid'))
+        return opts.get('repoid')
     elif ui.config('reviewboard','repoid'):
         return int(ui.config('reviewboard','repoid'))
     
@@ -224,7 +224,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     if not repositories:
         raise util.Abort(_('no repositories configured at %s' % server))
 
-    repositories = sorted(repositories, key=operator.itemgetter('name'),
+    repositories = sorted(repositories, key=operator.attrgetter('name'),
                           cmp=lambda x, y: cmp(x.lower(), y.lower()))
     
     remotepath = expandpath(ui, opts['outgoingrepo']).lower()
@@ -233,7 +233,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         if r.tool != 'Mercurial':
             continue
         if r.path.lower() == remotepath:
-            repo_id = r.id
+            repo_id = str(r.id)
             ui.status('Using repository: %s\n' % r.name)
     if repo_id == None:
         ui.status('Repositories:\n')
