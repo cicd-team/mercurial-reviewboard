@@ -156,7 +156,7 @@ repository accessible to Review Board is not the upstream repository.
             raise util.Abort(_(str(msg)))
     else:
         if repo_id_opt:
-            repo_id = int(repo_id_opt)
+            repo_id = str(int(repo_id_opt))
         else:
             try:
                 repositories = reviewboard.repositories()
