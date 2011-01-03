@@ -3,7 +3,8 @@ from mock import patch
 from mercurial_reviewboard import getreviewboard
 from mercurial_reviewboard.tests import get_initial_opts, mock_ui
 
-@patch('mercurial_reviewboard.ReviewBoard')
+
+@patch('mercurial_reviewboard.make_rbclient')
 def test_get_credentials_from_config(mock_reviewboard):
         
     # username and password configs are included 
@@ -13,6 +14,7 @@ def test_get_credentials_from_config(mock_reviewboard):
         
     getreviewboard(ui, opts)
     
-    mock_reviewboard.return_value.login.assert_called_with('foo', 'bar')
+    mock_reviewboard.assert_called_with('http://example.com', 
+        'foo', 'bar', proxy=None, apiver='')
 
     

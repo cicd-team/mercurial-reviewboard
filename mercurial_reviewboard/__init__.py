@@ -7,9 +7,11 @@ import operator
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
 
-from reviewboard import ReviewBoard, ReviewBoardError
+from reviewboard import make_rbclient, ReviewBoardError
 
-__version__ = '3.3.2'
+
+__version__ = '3.4.0'
+
 
 def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server
@@ -33,6 +35,10 @@ may be used for this purpose. The --outgoing option is the simplest of these;
 it assumes that the upstream repository specified in .hg/hgrc is the same as
 the one known to Review Board. The other two options offer more control if
 this is not the case.
+
+The --outgoing option recognizes the path entries 'reviewboard', 'default-push'
+and 'default' in this order of precedence. 'reviewboard' may be used if the
+repository accessible to Review Board is not the upstream repository.
 '''
 
     ui.status('postreview plugin, version %s\n' % __version__)
@@ -161,9 +167,10 @@ def getreviewboard(ui, opts):
     else:
         proxy=None
     
-    server = ui.config('reviewboard', 'server')
+    server = opts.get('server')
+    if not server:
+        server = ui.config('reviewboard', 'server')
     
-    reviewboard = ReviewBoard(server, proxy)
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
     username = opts.get('username') or ui.config('reviewboard', 'user')
@@ -174,11 +181,11 @@ def getreviewboard(ui, opts):
         ui.status('password: %s\n' % '**********')
 
     try:
-        reviewboard.login(username, password)
+        return make_rbclient(server, username, password, proxy=proxy, 
+            apiver=opts.get('apiver'))
     except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
-    
-    return reviewboard
+        raise util.Abort(_(str(msg)))
+
 
 def update_review(request_id, ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui, opts)
@@ -187,7 +194,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+        raise util.Abort(_(str(msg)))
     
 def new_review(ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui, opts)
@@ -199,7 +206,7 @@ def new_review(ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+        raise util.Abort(_(str(msg)))
     
     return request_id
 
@@ -212,7 +219,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     try:
         repositories = reviewboard.repositories()
     except ReviewBoardError, msg:
-        raise util.Abort(_(msg))
+        raise util.Abort(_(str(msg)))
 
     if not repositories:
         raise util.Abort(_('no repositories configured at %s' % server))
@@ -223,25 +230,25 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     remotepath = expandpath(ui, opts['outgoingrepo']).lower()
     repo_id = None
     for r in repositories:
-        if r['tool'] != 'Mercurial':
+        if r.tool != 'Mercurial':
             continue
-        if r['path'].lower() == remotepath:
-            repo_id = r['id']
-            ui.status('Using repository: %s\n' % r['name'])
+        if r.path.lower() == remotepath:
+            repo_id = r.id
+            ui.status('Using repository: %s\n' % r.name)
     if repo_id == None:
         ui.status('Repositories:\n')
         repo_ids = set()
         for r in repositories:
-            if r['tool'] != 'Mercurial':
+            if r.tool != 'Mercurial':
                 continue
-            ui.status('[%s] %s\n' % (r['id'], r['name']) )
-            repo_ids.add(str(r['id']))
+            ui.status('[%s] %s\n' % (r.id, r.name) )
+            repo_ids.add(str(r.id))
         if len(repositories) > 1:
             repo_id = ui.prompt('repository id:', 0)
             if not repo_id in repo_ids:
                 raise util.Abort(_('invalid repository ID: %s') % repo_id)
         else:
-            repo_id = repositories[0]['id']
+            repo_id = str(repositories[0].id)
             ui.status('repository id: %s\n' % repo_id)
     return repo_id
 
@@ -291,6 +298,8 @@ def createfields(ui, repo, c, parentc, opts):
         else:
             description = changesets_string
         fields['description'] = description 
+        
+        fields['branch'] = c.branch()
 
     for field in ('target_groups', 'target_people'):
         if opts.get(field):
@@ -323,7 +332,9 @@ def expandpath(ui, upstream):
     if upstream:
         return ui.expandpath(upstream)
     else:
-        return ui.expandpath('default-push', 'default')
+        return ui.expandpath(ui.expandpath('reviewboard', 'default-push'),
+                                           'default')
+
 
 def check_parent_options(opts):
     usep = bool(opts['parent'])
@@ -385,6 +396,7 @@ cmdtable = {
          _('specify repository id on reviewboard server')),
         ('m', 'master', '',
          _('use specified revision as the parent diff base')),
+        ('', 'server', '', _('ReviewBoard server URL')),
         ('e', 'existing', '', _('existing request ID to update')),
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
@@ -401,6 +413,7 @@ cmdtable = {
             _('comma separated list of groups needed to review the code')),
         ('', 'username', '', _('username for the ReviewBoard site')),
         ('', 'password', '', _('password for the ReviewBoard site')),
+        ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }

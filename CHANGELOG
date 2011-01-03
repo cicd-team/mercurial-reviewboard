@@ -1,3 +1,21 @@
+Version 3.4.0 (1/3/10)
+
+    * major merge of latest changes from parent project
+
+    changes included below
+    
+    * added support for ReviewBoard API 2.0
+
+    * fixes for internationalization of Exception messages
+    
+    * allow outgoing reviewboard repo to be specified in .hg/hgrc
+    
+    * set branch field in review request according to the changeset branch
+
+	* Added the "server" option to specify the ReviewBoard server to be used
+	
+	* handle 201 responses correctly
+
 Version 3.3.2 (11/16/10)
 
     * improved error messaging using -g when there are no outgoing changes
