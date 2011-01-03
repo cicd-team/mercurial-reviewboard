@@ -1,5 +1,9 @@
 Version 3.4.0 (1/3/10)
 
+    * summary command line option
+
+    summary option contributed to parent project by Michael De Wildt.
+
     * major merge of latest changes from parent project
 
     changes included below
