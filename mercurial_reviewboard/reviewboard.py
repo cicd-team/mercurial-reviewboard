@@ -215,16 +215,19 @@ class HttpClient:
             data = urllib2.urlopen(r).read()
             self._cj.save(self.cookie_file)
             return data
-        except urllib2.URLError, e:
+        except urllib2.HTTPError, e:
             if not hasattr(e, 'code'):
                 raise
             if e.code >= 400:
-                raise ReviewBoardError(e.read())
+                e.msg = "HTTP Error: " + e.msg
+                raise ReviewBoardError(e.msg)
             else:
                 return ""
-        except urllib2.HTTPError, e:
-            raise ReviewBoardError(e.read())
-
+        except urllib2.URLError, e:
+            code = e.reason[0]
+            msg = "URL Error: " + e.reason[1]
+            raise ReviewBoardError({'err' : {'msg' : msg, 'code' : code}})
+        
     def _process_json(self, data):
         """
         Loads in a JSON file and returns the data if successful. On failure,
@@ -306,8 +309,7 @@ class Api20Client(ApiClient):
 
     def update_request(self, id, fields={}, diff='', parentdiff=''):
         req = self._get_request(id)
-        self._set_request_details(req, fields, diff, parentdiff)
-        self.publish(id)
+        self._set_request_details(req, fields, diff, parentdiff)        
 
     def publish(self, id):
         req = self._get_request(id)
