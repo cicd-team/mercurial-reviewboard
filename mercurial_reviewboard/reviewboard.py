@@ -8,6 +8,7 @@ import os
 import urllib2
 import simplejson
 import mercurial.ui
+import datetime
 from urlparse import urljoin, urlparse
 
 class APIError(Exception):
@@ -51,6 +52,14 @@ class Repository:
         self.name = name
         self.tool = tool
         self.path = path
+
+class Request:
+    """
+    Represents a ReviewBoard request
+    """
+    def __init__(self, id, summary):
+        self.id = id
+        self.summary = summary
 
 class ReviewBoardHTTPPasswordMgr(urllib2.HTTPPasswordMgr):
     """
@@ -287,6 +296,7 @@ class Api20Client(ApiClient):
     def __init__(self, httpclient):
         ApiClient.__init__(self, httpclient)
         self._repositories = None
+        self._requests = None
         self._requestcache = {}
 
     def login(self, username=None, password=None):
@@ -300,6 +310,24 @@ class Api20Client(ApiClient):
                                              r['path'])
                                   for r in rsp['repositories']]
         return self._repositories
+
+    def requests(self):
+        # Get all the pending request within the last week for a given user
+        if not self._requests:
+            usr = str(self._httpclient._password_mgr.rb_user)
+            delta = datetime.timedelta(days=7)
+            today = datetime.datetime.today()
+            sevenDaysAgo = today - delta
+            rsp = self._api_request('GET', '/api/review-requests/' +
+                                           '?from-user=%s' % usr +
+                                           '&status=pending' +
+                                           '&max-results=50' +
+                                           '&last-updated-from=%s' % sevenDaysAgo)
+            self._requests = []
+            for r in rsp['review_requests']:
+                self._requests += [Request(r['id'], r['summary'].strip())]
+                
+        return self._requests    
 
     def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
         req = self._create_request(repo_id)
