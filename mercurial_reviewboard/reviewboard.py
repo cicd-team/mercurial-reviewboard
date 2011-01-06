@@ -296,7 +296,7 @@ class Api20Client(ApiClient):
     def __init__(self, httpclient):
         ApiClient.__init__(self, httpclient)
         self._repositories = None
-        self._requests = None
+        self._pending_user_requests = None
         self._requestcache = {}
 
     def login(self, username=None, password=None):
@@ -311,9 +311,9 @@ class Api20Client(ApiClient):
                                   for r in rsp['repositories']]
         return self._repositories
 
-    def requests(self):
+    def pending_user_requests(self):
         # Get all the pending request within the last week for a given user
-        if not self._requests:
+        if not self._pending_user_requests:
             usr = str(self._httpclient._password_mgr.rb_user)
             delta = datetime.timedelta(days=7)
             today = datetime.datetime.today()
@@ -323,11 +323,11 @@ class Api20Client(ApiClient):
                                            '&status=pending' +
                                            '&max-results=50' +
                                            '&last-updated-from=%s' % sevenDaysAgo)
-            self._requests = []
+            self._pending_user_requests = []
             for r in rsp['review_requests']:
-                self._requests += [Request(r['id'], r['summary'].strip())]
+                self._pending_user_requests += [Request(r['id'], r['summary'].strip())]
                 
-        return self._requests    
+        return self._pending_user_requests    
 
     def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
         req = self._create_request(repo_id)
