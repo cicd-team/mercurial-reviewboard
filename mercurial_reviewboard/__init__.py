@@ -252,6 +252,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
             ui.status('repository id: %s\n' % repo_id)
     return repo_id
 
+
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
     
