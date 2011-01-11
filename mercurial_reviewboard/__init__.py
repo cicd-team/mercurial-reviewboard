@@ -10,7 +10,7 @@ from mercurial.i18n import _
 from reviewboard import make_rbclient, ReviewBoardError
 
 
-__version__ = '3.4.0'
+__version__ = '3.5.0'
 
 
 def postreview(ui, repo, rev='.', **opts):
