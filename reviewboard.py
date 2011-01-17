@@ -447,21 +447,20 @@ class Api10Client(ApiClient):
 def make_rbclient(url, username, password, proxy=None, apiver=''):
     httpclient = HttpClient(url, proxy)
 
-    if not username:
-        username = mercurial.ui.ui().prompt('Username: ')
-    if not password:
-        password = getpass.getpass('Password: ')
-
-    httpclient.set_credentials(username, password)
+    if not httpclient.has_valid_cookie():
+        if not username:
+            username = mercurial.ui.ui().prompt('Username: ')
+        if not password:
+            password = getpass.getpass('Password: ')
+        httpclient.set_credentials(username, password)
 
     if not apiver:
         # Figure out whether the server supports API version 2.0
         try:
-            httpclient.api_request('GET', '/api/info/')
+            httpclient.api_request('GET', '/api/')
             apiver = '2.0'
         except:
             apiver = '1.0'
-            pass
 
     if apiver == '2.0':
         return Api20Client(httpclient)
@@ -470,4 +469,4 @@ def make_rbclient(url, username, password, proxy=None, apiver=''):
         cli.login(username, password)
         return cli
     else:
-        raise Exception("Unsupported API version: %s" % apiver)
+        raise Exception("Unknown API version: %s" % apiver)
