@@ -353,7 +353,7 @@ class Api10Client(ApiClient):
         return self._api_request('POST', url, fields, files)
 
     def login(self, username=None, password=None):
-        if not username and not password and self.client.has_valid_cookie():
+        if not username and not password and self._httpclient.has_valid_cookie():
             return
 
         if not username:
