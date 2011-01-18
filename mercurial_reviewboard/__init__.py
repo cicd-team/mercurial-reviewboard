@@ -210,7 +210,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     if opts.get('repoid'):
         return opts.get('repoid')
     elif ui.config('reviewboard','repoid'):
-        return int(ui.config('reviewboard','repoid'))
+        return ui.config('reviewboard','repoid')
     
     try:
         repositories = reviewboard.repositories()
