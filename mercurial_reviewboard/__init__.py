@@ -43,9 +43,8 @@ repository accessible to Review Board is not the upstream repository.
 
     ui.status('postreview plugin, version %s\n' % __version__)
     
-    if not ui.config('reviewboard', 'server'):
-        raise util.Abort(
-                _('please specify a reviewboard server in your .hgrc file') )
+    # checks to see if the server was set
+    find_server(ui, opts)
     
     check_parent_options(opts)
 
@@ -121,8 +120,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
         request_id = new_review(ui, fields, diff, parentdiff, 
                                    opts)
 
-    request_url = '%s/%s/%s/' % (ui.config('reviewboard', 'server'), 
-                                 "r", request_id)
+    request_url = '%s/%s/%s/' % (find_server(ui, opts), "r", request_id)
 
     if not request_url.startswith('http'):
         request_url = 'http://%s' % request_url
@@ -167,9 +165,7 @@ def getreviewboard(ui, opts):
     else:
         proxy=None
     
-    server = opts.get('server')
-    if not server:
-        server = ui.config('reviewboard', 'server')
+    server = find_server(ui, opts)
     
     ui.status('reviewboard:\t%s\n' % server)
     ui.status('\n')
@@ -384,6 +380,17 @@ def find_contexts(repo, parentctx, ctx, opts):
         contexts.append(currctx)
     contexts.reverse()
     return contexts
+    
+
+def find_server(ui, opts):
+    server = opts.get('server')
+    if not server:
+        server = ui.config('reviewboard', 'server')
+    if not server:
+        msg = 'please specify a reviewboard server in your .hgrc file or using the --server flag'
+        raise util.Abort(_(msg))
+    return server
+    
 
 def readline():
     line = sys.stdin.readline()

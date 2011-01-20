@@ -1,8 +1,8 @@
 from mock import Mock, patch_object
-from nose.tools import eq_
+from nose.tools import eq_, raises
 
 import mercurial_reviewboard
-from mercurial_reviewboard import postreview
+from mercurial_reviewboard import postreview, util
 from mercurial_reviewboard.tests import get_initial_opts, get_repo, mock_ui
 
 class TestChangesetsOutput:
@@ -100,11 +100,50 @@ class TestLaunchBrowser:
     @patch_object(mercurial_reviewboard, 'new_review')
     @patch_object(mercurial_reviewboard, 'launch_webbrowser')
     def test_browser_launch_true(self, mock_launch, mock_create_method):
+        mock_create_method.return_value = '1'
+        
         ui = mock_ui()
         ui.setconfig('reviewboard', 'launch_webbrowser', 'true')
         
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
         postreview(ui, repo, **opts)
-        assert mock_launch.called
+        eq_('http://example.com/r/1/', mock_launch.call_args[0][1])
+
+    @patch_object(mercurial_reviewboard, 'new_review')
+    @patch_object(mercurial_reviewboard, 'launch_webbrowser')
+    def test_browser_launch_server_arg(self, mock_launch, mock_create_method):
+        mock_create_method.return_value = '1'
+
+        ui = mock_ui()
+        ui.setconfig('reviewboard', 'launch_webbrowser', 'true')
+
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        opts['server'] = 'example.org'
+        postreview(ui, repo, **opts)
+        eq_('http://example.org/r/1/', mock_launch.call_args[0][1])
+
+
+class TestServerConfiguration:
+    
+    @raises(util.Abort)
+    @patch_object(mercurial_reviewboard, 'new_review')
+    def test_no_reviewboard_configured(self, mock_create_review):
+        ui = mock_ui()
+        ui.setconfig('reviewboard', 'server', None)
         
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        postreview(ui, repo, **opts)
+    
+    @patch_object(mercurial_reviewboard, 'new_review')
+    def test_reviewboard_option(self, mock_create_review):
+        ui = mock_ui()
+        ui.setconfig('reviewboard', 'server', None)
+
+        repo = get_repo(ui, 'two_revs')
+        opts = get_initial_opts()
+        opts['server'] = 'example.com'
+        postreview(ui, repo, **opts)
+        assert mock_create_review.called
