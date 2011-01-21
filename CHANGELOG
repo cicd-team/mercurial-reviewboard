@@ -1,4 +1,21 @@
-Version 3.5.0 (1/11/10)
+Version 3.5.1 (1/21/11)
+
+   * bug fixes
+
+   - launch_browser was using the wrong url when the server flag was set
+   - allowing use of the server flag in lieu of the hgrc setting
+
+   * find_reviewboard_repo_id fix
+
+   convert to int was removed when getting the repo id from hgrc
+
+   * _encode_multipart_formdata fix
+
+   remove all non ASCII chars before postin
+
+   * merged in bug fixes from parent project
+
+Version 3.5.0 (1/11/11)
 
    * added ability to get list of current reviews from the RB server
 
@@ -6,7 +23,7 @@ Version 3.5.0 (1/11/10)
 
    * fixed some bugs in error handling and reviews being published too early
 
-Version 3.4.0 (1/3/10)
+Version 3.4.0 (1/3/11)
 
     * summary command line option
 
