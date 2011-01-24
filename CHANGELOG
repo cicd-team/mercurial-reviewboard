@@ -1,3 +1,9 @@
+Version 3.5.2 (1/24/11)
+
+   * fixed problem generating parent diffs against an empty repo
+
+   * adding hint if review post with no parent diff fails
+
 Version 3.5.1 (1/21/11)
 
    * bug fixes
