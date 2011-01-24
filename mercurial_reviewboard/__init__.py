@@ -192,7 +192,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise post_error(msg, parentdiff)
     
 def new_review(ui, fields, diff, parentdiff, opts):
     reviewboard = getreviewboard(ui, opts)
@@ -204,9 +204,17 @@ def new_review(ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise post_error(msg, parentdiff)
     
     return request_id
+
+
+def post_error(error, parentdiff):
+    msg = error.__str__()
+    if not parentdiff:
+        msg += '\n  You may need to generate a parent diff with the -o or -O <repo> option.'
+    return util.Abort(_(msg))
+
 
 def find_reviewboard_repo_id(ui, reviewboard, opts):
     if opts.get('repoid'):
