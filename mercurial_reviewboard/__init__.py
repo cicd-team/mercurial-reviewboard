@@ -50,8 +50,10 @@ repository accessible to Review Board is not the upstream repository.
 
     c = repo.changectx(rev)
 
-    rparent = find_rparent(ui, repo, c, opts)        
+    rparent = find_rparent(ui, repo, c, opts)
+    ui.debug('remote parent: %s\n' % rparent)
     parent  = find_parent(ui, repo, c, rparent, opts)
+    ui.debug('parent: %s\n' % parent)
 
     if parent is None:
         msg = "Unable to determine parent revision for diff. "
@@ -100,7 +102,7 @@ def create_review_data(ui, repo, c, parent, rparent):
     ui.debug('\n=== Diff from parent to rev ===\n')
     ui.debug(diff + '\n')
 
-    if rparent and parent != rparent:
+    if rparent != None and parent != rparent:
         parentdiff = getdiff(ui, repo, parent, rparent)
         ui.debug('\n=== Diff from rparent to parent ===\n')
         ui.debug(parentdiff + '\n')
