@@ -279,7 +279,8 @@ class HttpClient:
 
         content_type = "multipart/form-data; boundary=%s" % BOUNDARY
 
-        return content_type, unicode(content, errors='ignore')
+        return content_type, content
+
 
 class ApiClient:
     def __init__(self, httpclient):
