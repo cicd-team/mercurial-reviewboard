@@ -312,7 +312,7 @@ def createfields(ui, repo, c, parentc, opts):
         
         fields['branch'] = c.branch()
 
-    for field in ('target_groups', 'target_people'):
+    for field in ('target_groups', 'target_people', 'bugs_closed'):
         if opts.get(field):
             value = opts.get(field)
         else:
@@ -434,6 +434,8 @@ cmdtable = {
             _('comma separated list of people needed to review the code')),
         ('G', 'target_groups', '', 
             _('comma separated list of groups needed to review the code')),
+        ('B', 'bugs_closed', '', 
+            _('comma separated list of bug IDs addressed by the change')),
         ('', 'username', '', _('username for the ReviewBoard site')),
         ('', 'password', '', _('password for the ReviewBoard site')),
         ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
