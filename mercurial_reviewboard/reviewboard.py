@@ -479,7 +479,8 @@ def make_rbclient(url, username, password, proxy=None, apiver=''):
             username = mercurial.ui.ui().prompt('Username: ')
         if not password:
             password = getpass.getpass('Password: ')
-        httpclient.set_credentials(username, password)
+
+    httpclient.set_credentials(username, password)
 
     if not apiver:
         # Figure out whether the server supports API version 2.0
