@@ -59,7 +59,7 @@ repository accessible to Review Board is not the upstream repository.
         msg = "Unable to determine parent revision for diff. "
         if opts.get('outgoingchanges'):
             msg += _("If using -g/--outgoingchanges, make sure you have some "
-                     "(type 'hg out'). Or did you forget to commit ('hg st')?")
+                     "(type 'hg out'). Did you forget to commit ('hg st')?")
         raise util.Abort(msg)
 
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
