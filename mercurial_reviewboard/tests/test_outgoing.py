@@ -5,6 +5,7 @@ from mercurial import util
 from mercurial_reviewboard import postreview
 from mercurial_reviewboard.tests import get_initial_opts, get_repo, mock_ui
 
+
 @patch('mercurial_reviewboard.send_review')
 def test_outgoing(mock_send):
     ui = mock_ui()
@@ -16,6 +17,7 @@ def test_outgoing(mock_send):
     
     expected = open('mercurial_reviewboard/tests/diffs/outgoing', 'r').read()
     eq_(expected, mock_send.call_args[0][4])
+
     
 @patch('mercurial_reviewboard.send_review')
 def test_outgoing_with_branch(mock_send):
@@ -32,6 +34,7 @@ def test_outgoing_with_branch(mock_send):
                     'r').read()
     eq_(expected, mock_send.call_args[0][4])
 
+
 @patch('mercurial_reviewboard.send_review')
 def test_no_outgoing_no_revs(mock_send):
     try:
@@ -45,6 +48,7 @@ def test_no_outgoing_no_revs(mock_send):
     except util.Abort, e:
         check_parent_rev_exception(e)
 
+
 @patch('mercurial_reviewboard.send_review')
 def test_no_outgoing_two_revs(mock_send):
     try:
@@ -57,6 +61,7 @@ def test_no_outgoing_two_revs(mock_send):
         assert 0, "Should have raised an Abort."
     except util.Abort, e:
         check_parent_rev_exception(e)
+
 
 def check_parent_rev_exception(e):
     eq_("Unable to determine parent revision for diff. "
