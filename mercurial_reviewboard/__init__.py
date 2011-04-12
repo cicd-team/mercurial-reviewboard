@@ -52,6 +52,7 @@ repository accessible to Review Board is not the upstream repository.
 
     rparent = find_rparent(ui, repo, c, opts)
     ui.debug('remote parent: %s\n' % rparent)
+    
     parent  = find_parent(ui, repo, c, rparent, opts)
     ui.debug('parent: %s\n' % parent)
 
@@ -356,6 +357,11 @@ def check_parent_options(opts):
         raise util.Abort(_(
            "you cannot combine the --parent, --outgoingchanges "
            "and --branch options"))
+           
+    if useg and not (opts.get('outgoing') or opts.get('outgoingrepo')):
+        msg = ("When using the -g/--outgoingchanges flag, you must also use "
+            "either the -o or the -O <repo> flag.")
+        raise util.Abort(msg)
         
 def find_branch_parent(ui, ctx):
     '''Find the parent revision of the 'ctx' branch.'''

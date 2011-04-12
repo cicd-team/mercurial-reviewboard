@@ -1,0 +1,3 @@
+pushd ../repos/one_rev
+
+hg diff -r 00000 -r 0 > ../../diffs/outgoing_one_rev

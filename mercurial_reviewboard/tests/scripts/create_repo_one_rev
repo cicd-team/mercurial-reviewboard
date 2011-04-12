@@ -1,0 +1,16 @@
+pushd ../repo_tars
+
+hg init one_rev
+
+pushd one_rev
+
+echo a > a
+hg add
+hg commit -m 0 -u "john doe"
+
+popd
+
+tar cvf one_rev.tar one_rev/
+
+rm -rf one_rev/
+
