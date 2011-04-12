@@ -1,3 +1,10 @@
+Version 3.5.5 (4/12/11)
+
+   * bug fix
+
+   - warning when you use the outgoingchanges flag without specifying 
+     a parent repository
+
 Version 3.5.4 (4/1/11)
 
    * bug fix
