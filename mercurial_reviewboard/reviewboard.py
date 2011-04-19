@@ -222,7 +222,10 @@ class HttpClient:
         try:
             r = ApiRequest(method, url, body, headers)
             data = urllib2.urlopen(r).read()
-            self._cj.save(self.cookie_file)
+            try:
+                self._cj.save(self.cookie_file)
+            except:
+                pass
             return data
         except urllib2.HTTPError, e:
             if not hasattr(e, 'code'):
@@ -384,8 +387,9 @@ class Api10Client(ApiClient):
         return self._api_request('POST', url, fields, files)
 
     def login(self, username=None, password=None):
-        if not username and not password and self._httpclient.has_valid_cookie():
-            return
+        if not username and not password:
+            if self._httpclient.has_valid_cookie():
+                return
 
         if not username:
             username = mercurial.ui.ui().prompt('Username: ')
@@ -474,11 +478,14 @@ class Api10Client(ApiClient):
 def make_rbclient(url, username, password, proxy=None, apiver=''):
     httpclient = HttpClient(url, proxy)
 
-    if not httpclient.has_valid_cookie():
-        if not username:
-            username = mercurial.ui.ui().prompt('Username: ')
-        if not password:
-            password = getpass.getpass('Password: ')
+    if not username and not password:
+            if httpclient.has_valid_cookie():
+                return
+    
+    if not username:
+        username = mercurial.ui.ui().prompt('Username: ')
+    if not password:
+        password = getpass.getpass('Password: ')
 
     httpclient.set_credentials(username, password)
 
