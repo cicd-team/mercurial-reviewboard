@@ -225,6 +225,7 @@ class HttpClient:
             try:
                 self._cj.save(self.cookie_file)
             except:
+                # this can be ignored safely
                 pass
             return data
         except urllib2.HTTPError, e:
