@@ -12,4 +12,4 @@ setup(
         "post changesets for review to a Review Board server",
     long_description=open('README').read(),
     install_requires=['Mercurial', 'simplejson>=2.0.9']
-)    
+)
