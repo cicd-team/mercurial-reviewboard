@@ -1,3 +1,6 @@
 syntax: glob
 *.pyc
+dist/*
+distribute-*
 ENV
+mercurial_reviewboard.egg-info/*
