@@ -188,7 +188,7 @@ def getreviewboard(ui, opts):
         return make_rbclient(server, username, password, proxy=proxy, 
             apiver=opts.get('apiver'))
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise util.Abort(_(unicode(msg)))
 
 
 def update_review(request_id, ui, fields, diff, parentdiff, opts):
@@ -198,7 +198,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise util.Abort(_(unicode(msg)))
 
 
 def new_review(ui, fields, diff, parentdiff, opts):
@@ -211,7 +211,7 @@ def new_review(ui, fields, diff, parentdiff, opts):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise util.Abort(_(unicode(msg)))
     
     return request_id
 
@@ -225,7 +225,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     try:
         repositories = reviewboard.repositories()
     except ReviewBoardError, msg:
-        raise util.Abort(_(str(msg)))
+        raise util.Abort(_(unicode(msg)))
 
     if not repositories:
         raise util.Abort(_('no repositories configured at %s' % server))
@@ -405,7 +405,7 @@ def find_server(ui, opts):
         server = ui.config('reviewboard', 'server')
     if not server:
         msg = 'please specify a reviewboard server in your .hgrc file or using the --server flag'
-        raise util.Abort(_(str(msg)))
+        raise util.Abort(_(unicode(msg)))
     return server
     
 
