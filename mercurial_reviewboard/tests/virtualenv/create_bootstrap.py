@@ -6,6 +6,7 @@ def after_install(options, home_dir):
     install_package(home_dir, hg_version)
     install_package(home_dir, 'mock')
     install_package(home_dir, 'nose')
+    install_package(home_dir, 'simplejson')
 
 def install_package(home_dir, package_name):
     import os
