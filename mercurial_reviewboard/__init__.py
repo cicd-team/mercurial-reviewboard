@@ -327,18 +327,30 @@ def remoteparent(ui, repo, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
     remoterepo = hg.repository(ui, remotepath)
     
-    try:
-        from mercurial import discovery
-        out = discovery.findoutgoing(repo, remoterepo)
-    except ImportError:
-        # python <2.6 compatibility
-        out = repo.findoutgoing(remoterepo)
+    out = findoutgoing(repo, remoterepo)
     
     for o in out:
         orev = repo[o]
         a, b, c = repo.changelog.nodesbetween([orev.node()], [ctx.node()])
         if a:
             return orev.parents()[0]
+
+
+def findoutgoing(repo, remoterepo):
+    # The method for doing this has changed a few times...
+    try:
+        from mercurial import discovery
+    except ImportError:
+        # Must be earlier than 1.6
+        return repo.findoutgoing(remoterepo)
+
+    try:
+        common, outheads = discovery.findcommonoutgoing(repo, remoterepo)
+        return repo.changelog.findmissing(common=common, heads=outheads)
+    except AttributeError:
+        # Must be earlier than 1.9
+        return discovery.findoutgoing(repo, remoterepo)
+
 
 def expandpath(ui, upstream):
     if upstream:
