@@ -1,3 +1,7 @@
+Version 4.1.0 (?)
+
+   * added Mercurial 1.9 support
+
 Version 4.0.0 (7/14/11)
 
    * pip/easy_install support
