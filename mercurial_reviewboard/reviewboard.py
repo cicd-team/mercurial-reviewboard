@@ -479,16 +479,13 @@ class Api10Client(ApiClient):
 def make_rbclient(url, username, password, proxy=None, apiver=''):
     httpclient = HttpClient(url, proxy)
 
-    if not username and not password:
-            if httpclient.has_valid_cookie():
-                return
-    
-    if not username:
-        username = mercurial.ui.ui().prompt('Username: ')
-    if not password:
-        password = getpass.getpass('Password: ')
+    if not httpclient.has_valid_cookie():
+        if not username:
+            username = mercurial.ui.ui().prompt('Username: ')
+        if not password:
+            password = getpass.getpass('Password: ')
 
-    httpclient.set_credentials(username, password)
+        httpclient.set_credentials(username, password)
 
     if not apiver:
         # Figure out whether the server supports API version 2.0
