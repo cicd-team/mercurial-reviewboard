@@ -2,6 +2,8 @@ Version 4.1.0 (?)
 
    * added Mercurial 1.9 support
 
+   * fixed scenario where a cookie file could cause an error
+
 Version 4.0.0 (7/14/11)
 
    * pip/easy_install support
