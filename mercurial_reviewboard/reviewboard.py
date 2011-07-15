@@ -496,7 +496,9 @@ def make_rbclient(url, username, password, proxy=None, apiver=''):
             apiver = '1.0'
 
     if apiver == '2.0':
-        return Api20Client(httpclient)
+        cli = Api20Client(httpclient)
+        cli.login(username, password)
+        return cli
     elif apiver == '1.0':
         cli = Api10Client(httpclient)
         cli.login(username, password)
