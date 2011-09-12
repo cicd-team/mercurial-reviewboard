@@ -218,7 +218,6 @@ class HttpClient:
                 'Content-Type': content_type,
                 'Content-Length': str(len(body))
                 }
-
         try:
             r = ApiRequest(method, url, body, headers)
             data = urllib2.urlopen(r).read()
@@ -333,21 +332,49 @@ class Api20Client(ApiClient):
                 self._pending_user_requests += [Request(r['id'], r['summary'].strip())]
                 
         return self._pending_user_requests    
+        
+    def shipable_requests(self, repo_id):
+        # Get all the shipable request
+        rsp = self._api_request('GET', '/api/review-requests/' +
+                                           '?status=pending&ship-it=1&repo_id=%s'%repo_id)
+        return [Request(r['id'], r['summary'].strip()) for r in rsp['review_requests']]
+        
+    def download_attachement_with_given_caption(self, id, caption):
+        req = self._get_request(id)
+        attachments = self._api_request('GET', req['links']['file_attachments']['href'])['file_attachments']
+        attachments_with_caption = [(a['url'], a['filename']) for a in attachments if a['caption'] == caption ]
+        data_and_name = [(self._httpclient._http_request('GET', url, None, None), filename) for (url, filename) in attachments_with_caption]
+        names = [name for data, name in data_and_name]
+        for data, name in data_and_name:
+            f = open(name, 'wb')
+            f.write(data)
+            f.close();
+        return names;
 
-    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
+    def new_request(self, repo_id, fields={}, diff='', parentdiff='', files=None):
         req = self._create_request(repo_id)
-        self._set_request_details(req, fields, diff, parentdiff)
+        self._set_request_details(req, fields, diff, parentdiff, files)
         self._requestcache[req['id']] = req
         return req['id']
 
-    def update_request(self, id, fields={}, diff='', parentdiff=''):
+    def update_request(self, id, fields={}, diff='', parentdiff='', files=None):
         req = self._get_request(id)
-        self._set_request_details(req, fields, diff, parentdiff)        
+        self._set_request_details(req, fields, diff, parentdiff, files)        
 
     def publish(self, id):
         req = self._get_request(id)
         drafturl = req['links']['draft']['href']
         self._api_request('PUT', drafturl, {'public':'1'})
+
+    def discard(self, id):
+        req = self._get_request(id)
+        drafturl = req['links']['update']['href']
+        self._api_request('PUT', drafturl, {'status':'discarded'})
+
+    def submit(self, id):
+        req = self._get_request(id)
+        drafturl = req['links']['update']['href']
+        self._api_request('PUT', drafturl, {'status':'submitted'})
 
     def _create_request(self, repo_id):
         data = { 'repository': repo_id }
@@ -362,7 +389,7 @@ class Api20Client(ApiClient):
             self._requestcache[id] = result['review_request']
             return result['review_request']
 
-    def _set_request_details(self, req, fields, diff, parentdiff):
+    def _set_request_details(self, req, fields, diff, parentdiff, files):
         if fields:
             drafturl = req['links']['draft']['href']
             self._api_request('PUT', drafturl, fields)
@@ -373,6 +400,19 @@ class Api20Client(ApiClient):
                 data['parent_diff_path'] = \
                     {'filename': 'parent_diff', 'content': parentdiff}
             self._api_request('POST', diffurl, {}, data)
+        if files:
+            self._attach_files(req, files)
+			
+    def _attach_files(self, req, files):
+        if files:
+            furl = req['links']['file_attachments']['href']
+            attachments = self._api_request('GET', furl)
+            furl = attachments['links']['create']
+            base_id = len(attachments['file_attachments'])+1
+            for k, f in files.items():
+                f_fields = {'caption': k}
+                self._api_request(furl['method'], furl['href'], f_fields, {'path':f})
+
 
 class Api10Client(ApiClient):
     """

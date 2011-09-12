@@ -1,16 +1,36 @@
 '''post changesets to a reviewboard server'''
 
-import os, errno, re, sys
+import os, errno, re, sys, tempfile
 import cStringIO
 import operator
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util
 from mercurial.i18n import _
+from mercurial.commands import bundle, unbundle
 
 from reviewboard import make_rbclient, ReviewBoardError
 
 
 __version__ = '4.1.0'
+
+
+def get_shipable_bundles(ui, repo, rev='.', **opts):
+    ui.status('postreview plugin, version %s\n' % __version__)
+    find_server(ui, opts)
+    reviewboard = getreviewboard(ui, opts)
+    opts['unbundle'] = opts['submit'] or opts['unbundle']
+    try:
+        repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
+        shipable = reviewboard.shipable_requests(repo_id)
+        fnames_per_request = [(reviewboard.download_attachement_with_given_caption(request.id, 'changeset bundle'), request.id) for request in shipable]
+        if opts['unbundle']:
+            for fnames, request_id in fnames_per_request:
+                [unbundle(ui, repo, fname) for fname in fnames]
+                if opts['submit']:
+                    reviewboard.submit(request_id)
+                    print "submitted"
+    except ReviewBoardError, msg:
+        raise util.Abort(_(unicode(msg)))
 
 
 def postreview(ui, repo, rev='.', **opts):
@@ -67,7 +87,6 @@ repository accessible to Review Board is not the upstream repository.
 
     send_review(ui, repo, c, parent, diff, parentdiff, opts)
 
-
 def find_rparent(ui, repo, c, opts):
     outgoing = opts.get('outgoing')
     outgoingrepo = opts.get('outgoingrepo')
@@ -116,15 +135,23 @@ def create_review_data(ui, repo, c, parent, rparent):
     
     
 def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
-    
+    files = None
+    if opts['attachbundle']:
+        tmpfile = tempfile.NamedTemporaryFile(prefix='review_', suffix='.hgbundle', delete=False)
+        tmpfile.close()
+        bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),))
+        f = open(tmpfile.name,'rb')
+        files = {'changeset bundle': {'filename': tmpfile.name, 'content': f.read()}}
+        f.close()
+        os.remove(tmpfile.name)
     fields = createfields(ui, repo, c, parentc, opts)
 
     request_id = opts['existing']
     if request_id:
-        update_review(request_id, ui, fields, diff, parentdiff, opts)
+        update_review(request_id, ui, fields, diff, parentdiff, opts, files)
     else:
-        request_id = new_review(ui, fields, diff, parentdiff, 
-                                   opts)
+        request_id = new_review(ui, fields, diff, parentdiff,
+                                   opts, files)
 
     request_url = '%s/%s/%s/' % (find_server(ui, opts), "r", request_id)
 
@@ -138,8 +165,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     
     if ui.configbool('reviewboard', 'launch_webbrowser'):
         launch_webbrowser(ui, request_url)
-
-
+        
 def launch_webbrowser(ui, request_url):
     # not all python installations have this module, so only import it
     # when it's used
@@ -190,24 +216,23 @@ def getreviewboard(ui, opts):
     except ReviewBoardError, msg:
         raise util.Abort(_(unicode(msg)))
 
-
-def update_review(request_id, ui, fields, diff, parentdiff, opts):
+def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
     try:
-        reviewboard.update_request(request_id, fields, diff, parentdiff)
+        reviewboard.update_request(request_id, fields, diff, parentdiff, files)
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
         raise util.Abort(_(unicode(msg)))
 
 
-def new_review(ui, fields, diff, parentdiff, opts):
+def new_review(ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
 
     repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
 
     try:
-        request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff)
+        request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff, files)
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
@@ -262,6 +287,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
     
+
     all_contexts = find_contexts(repo, parentc, c, opts)
 
     changesets_string = 'changesets:\n'
@@ -427,6 +453,15 @@ def readline():
 
 
 cmdtable = {
+    "pullreviewed": 
+        (get_shipable_bundles,
+        [('s', 'submit', False,
+          _('if unbundle is successfull, mark the review as submitted (implies --unbundle)')),
+        ('u', 'unbundle', False,
+         _('unbundle the downloaded bundle')),
+         ('O', 'outgoingrepo', '',
+         _('use specified repository to determine which reviewed bundles to pull')),],
+        _('hg pullreviewed ')),
     "postreview":
         (postreview,
         [
@@ -459,6 +494,7 @@ cmdtable = {
         ('', 'username', '', _('username for the ReviewBoard site')),
         ('', 'password', '', _('password for the ReviewBoard site')),
         ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
+		('a', 'attachbundle', False , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 }
