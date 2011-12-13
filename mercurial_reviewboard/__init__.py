@@ -459,6 +459,8 @@ cmdtable = {
         (get_shipable_bundles,
         [('s', 'submit', False,
           _('if unbundle is successfull, mark the review as submitted (implies --unbundle)')),
+        ('I', 'interactive', False, 
+            _('override the default summary and description')),
         ('u', 'unbundle', False,
          _('unbundle the downloaded bundle')),
          ('O', 'outgoingrepo', '',
