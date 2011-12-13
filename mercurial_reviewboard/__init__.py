@@ -266,7 +266,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         if r.path.lower() == remotepath:
             repo_id = str(r.id)
             ui.status('Using repository: %s\n' % r.name)
-    if repo_id == None:
+    if repo_id == None and opts['interactive']:
         ui.status('Repositories:\n')
         repo_ids = set()
         for r in repositories:
@@ -281,6 +281,8 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         else:
             repo_id = str(repositories[0].id)
             ui.status('repository id: %s\n' % repo_id)
+    elif repo_id == None and not opts['interactive']:
+        raise util.Abort(_('could not determine repository - use interactive flag'))
     return repo_id
 
 
