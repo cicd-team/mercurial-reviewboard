@@ -52,6 +52,7 @@ def mock_ui():
         mock.setconfig('reviewboard', 'password', 'bar')
         # probably best to prevent reading from the user's 
         # hgrc but this should do for now
+        mock.setconfig('reviewboard', 'repoid', None);
         mock.setconfig('reviewboard', 'launch_webbrowser', 'false')
         
         def copy_side_effect():
