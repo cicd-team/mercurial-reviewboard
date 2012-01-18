@@ -9,10 +9,12 @@ from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
 
 from reviewboard import make_rbclient, ReviewBoardError
+from fetchreviewed import fetchreviewed
 
 
 __version__ = '4.1.0'
 
+BUNDLE_ATTACHMENT_CAPTION = 'changeset bundle'
 
 def get_shipable_bundles(ui, repo, rev='.', **opts):
     ui.status('postreview plugin, version %s\n' % __version__)
@@ -22,7 +24,7 @@ def get_shipable_bundles(ui, repo, rev='.', **opts):
     try:
         repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
         shipable = reviewboard.shipable_requests(repo_id)
-        fnames_per_request = [(reviewboard.download_attachement_with_given_caption(request.id, 'changeset bundle'), request.id) for request in shipable]
+        fnames_per_request = [(reviewboard.download_attachement_with_given_caption(request.id, BUNDLE_ATTACHMENT_CAPTION), request.id) for request in shipable]
         if opts['unbundle']:
             for fnames, request_id in fnames_per_request:
                 [unbundle(ui, repo, fname) for fname in fnames]
@@ -141,7 +143,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
         tmpfile.close()
         bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),))
         f = open(tmpfile.name,'rb')
-        files = {'changeset bundle': {'filename': tmpfile.name, 'content': f.read()}}
+        files = {BUNDLE_ATTACHMENT_CAPTION: {'filename': tmpfile.name, 'content': f.read()}}
         f.close()
         os.remove(tmpfile.name)
     fields = createfields(ui, repo, c, parentc, opts)
@@ -219,6 +221,7 @@ def getreviewboard(ui, opts):
 def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
     try:
+        reviewboard.delete_attachments_with_caption(request_id, BUNDLE_ATTACHMENT_CAPTION)
         reviewboard.update_request(request_id, fields, diff, parentdiff, files)
         if opts['publish']:
             reviewboard.publish(request_id)
@@ -501,4 +504,11 @@ cmdtable = {
 		('a', 'attachbundle', False , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
+
+    "fetchreviewed":
+        (fetchreviewed,
+         [
+          ('n', 'dry-run', False, _("Perform the fetch, but do not modify remote resources (reviewboard and repositories)")),
+          ],
+         _('hg fetchreviewed [-p]')),
 }

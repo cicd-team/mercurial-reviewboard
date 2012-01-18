@@ -338,11 +338,14 @@ class Api20Client(ApiClient):
         rsp = self._api_request('GET', '/api/review-requests/' +
                                            '?status=pending&ship-it=1&repo_id=%s'%repo_id)
         return [Request(r['id'], r['summary'].strip()) for r in rsp['review_requests']]
-        
-    def download_attachement_with_given_caption(self, id, caption):
+
+    def get_attachments_with_caption(self, id, caption):
         req = self._get_request(id)
         attachments = self._api_request('GET', req['links']['file_attachments']['href'])['file_attachments']
-        attachments_with_caption = [(a['url'], a['filename']) for a in attachments if a['caption'] == caption ]
+        return [a for a in attachments if a['caption'] == caption]
+
+    def download_attachement_with_given_caption(self, id, caption):
+        attachments_with_caption = [(a['url'], a['filename']) for a in self.get_attachments_with_caption(id, caption)]
         data_and_name = [(self._httpclient._http_request('GET', url, None, None), filename) for (url, filename) in attachments_with_caption]
         names = [name for data, name in data_and_name]
         for data, name in data_and_name:
@@ -350,6 +353,14 @@ class Api20Client(ApiClient):
             f.write(data)
             f.close();
         return names;
+
+    def delete_attachments_with_caption(self, id, caption):
+        for a in self.get_attachments_with_caption(id, caption):
+            self._api_request('DELETE', a['links']['delete']['href'])
+
+    def rename_attachments_with_caption(self, id, oldcaption, newcaption):
+        for a in self.get_attachments_with_caption(id, oldcaption):
+            self._api_request('PUT', a['links']['update']['href'], {'caption': newcaption})
 
     def new_request(self, repo_id, fields={}, diff='', parentdiff='', files=None):
         req = self._create_request(repo_id)
@@ -375,6 +386,15 @@ class Api20Client(ApiClient):
         req = self._get_request(id)
         drafturl = req['links']['update']['href']
         self._api_request('PUT', drafturl, {'status':'submitted'})
+
+    def review(self, id, message):
+        req = self._get_request(id)
+        reviews = self._api_request('GET', req['links']['reviews']['href'])
+        reviewurl = reviews['links']['create']['href']
+
+        params = {'body_top': message,
+                  'public': '1'}
+        self._api_request('POST', reviewurl, params)
 
     def _create_request(self, repo_id):
         data = { 'repository': repo_id }
