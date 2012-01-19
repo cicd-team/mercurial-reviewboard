@@ -472,7 +472,7 @@ cmdtable = {
     "postreview":
         (postreview,
         [
-        ('o', 'outgoing', False,
+        ('o', 'outgoing', True,
          _('use upstream repository to determine the parent diff base')),
         ('O', 'outgoingrepo', '',
          _('use specified repository to determine the parent diff base')),
@@ -486,7 +486,7 @@ cmdtable = {
         ('u', 'update', False, _('update the fields of an existing request')),
         ('p', 'publish', None, _('publish request immediately')),
         ('', 'parent', '', _('parent revision for the uploaded diff')),
-        ('g', 'outgoingchanges', False, 
+        ('g', 'outgoingchanges', True, 
             _('create diff with all outgoing changes')),
         ('b', 'branch', False, 
             _('create diff of all revisions on the branch')),
@@ -501,7 +501,7 @@ cmdtable = {
         ('', 'username', '', _('username for the ReviewBoard site')),
         ('', 'password', '', _('password for the ReviewBoard site')),
         ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
-		('a', 'attachbundle', False , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
+		('a', 'attachbundle', True , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 
