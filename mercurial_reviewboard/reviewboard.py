@@ -336,7 +336,7 @@ class Api20Client(ApiClient):
     def shipable_requests(self, repo_id):
         # Get all the shipable request
         rsp = self._api_request('GET', '/api/review-requests/' +
-                                           '?status=pending&ship-it=1&repo_id=%s'%repo_id)
+                                           '?status=pending&ship-it=1&repository=%s'%repo_id)
         return [Request(r['id'], r['summary'].strip()) for r in rsp['review_requests']]
 
     def get_attachments_with_caption(self, id, caption):
