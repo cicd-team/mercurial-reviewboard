@@ -4,7 +4,7 @@ import os, errno, re, sys, tempfile
 import cStringIO
 import operator
 
-from mercurial import cmdutil, hg, ui, mdiff, patch, util
+from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
 from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
 
@@ -512,3 +512,5 @@ cmdtable = {
           ],
          _('hg fetchreviewed [-p]')),
 }
+
+commands.optionalrepo += ' fetchreviewed'
