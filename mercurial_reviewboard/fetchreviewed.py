@@ -121,7 +121,7 @@ def fetch_for_repo(ui, repo, rbrepo, reviewboard, dryrun):
         try:
             fetched = fetch_review_request(ui, repo, reviewboard, request)
             if fetched and not dryrun:
-                report_success(ui, repo, reviewboard, request)
+                report_success(ui, repo, rbrepo, reviewboard, request)
 
         except util.Abort, e:
             ui.status(_("Processing of request %s failed (%s)\n") % (request.id, e.message))
@@ -130,7 +130,8 @@ def fetch_for_repo(ui, repo, rbrepo, reviewboard, dryrun):
 
         clean_working_copy(ui, repo, rbrepo)
 
-def report_success(ui, repo, reviewboard, request):
+def report_success(ui, repo, rbrepo, reviewboard, request):
+    from . import BUNDLE_ATTACHMENT_CAPTION
     push_reviewed(ui, repo, rbrepo)
     reviewboard.rename_attachments_with_caption(request.id,
                                                 BUNDLE_ATTACHMENT_CAPTION,
