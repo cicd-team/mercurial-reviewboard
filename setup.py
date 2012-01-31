@@ -12,5 +12,5 @@ setup(
     description="A Mecurial extension which adds a post review command to "
         "post changesets for review to a Review Board server",
     long_description=open('README').read(),
-    install_requires=['Mercurial', 'simplejson>=2.0.9']
+    install_requires=['Mercurial']
 )
