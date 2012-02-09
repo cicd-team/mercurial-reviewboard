@@ -11,6 +11,8 @@ def test_branch(mock_send):
     repo = get_repo(ui, 'branch')
     opts = get_initial_opts()
     opts['branch'] = True
+    opts['outgoingchanges'] = False
+    opts['outgoing'] = False
     
     postreview(ui, repo, **opts)
     

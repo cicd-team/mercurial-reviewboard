@@ -17,6 +17,8 @@ class TestChangesetsOutput:
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
         opts['parent'] = '000000'
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
@@ -30,6 +32,8 @@ class TestChangesetsOutput:
         opts['parent'] = '000000'
         opts['update'] = False
         opts['existing'] = '1'
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         
         eq_(self.expected_status, ui.status.call_args_list[1][0][0])
@@ -51,6 +55,8 @@ class TestMerge:
         repo = get_repo(ui, 'merge')
         opts = get_initial_opts()
         opts['parent'] = '000000'
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         
         eq_(expected_status, ui.status.call_args_list[1][0][0])
@@ -69,6 +75,8 @@ class TestMerge:
         repo = get_repo(ui, 'merge')
         opts = get_initial_opts()
         opts['branch'] = True
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
 
         eq_(expected_status, ui.status.call_args_list[1][0][0])
@@ -83,6 +91,8 @@ class TestLaunchBrowser:
         
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         assert mock_launch.called == False
         
@@ -94,6 +104,8 @@ class TestLaunchBrowser:
         
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         assert mock_launch.called == False
         
@@ -107,6 +119,8 @@ class TestLaunchBrowser:
         
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         eq_('http://example.com/r/1/', mock_launch.call_args[0][1])
 
@@ -121,6 +135,8 @@ class TestLaunchBrowser:
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
         opts['server'] = 'example.org'
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         eq_('http://example.org/r/1/', mock_launch.call_args[0][1])
 
@@ -145,5 +161,7 @@ class TestServerConfiguration:
         repo = get_repo(ui, 'two_revs')
         opts = get_initial_opts()
         opts['server'] = 'example.com'
+        opts['outgoingchanges'] = False
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
         assert mock_create_review.called

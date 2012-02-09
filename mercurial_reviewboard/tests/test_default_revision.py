@@ -10,6 +10,8 @@ def test_tip(mock_send):
     ui = mock_ui()
     repo = get_repo(ui, 'two_revs')
     opts = get_initial_opts()
+    opts['outgoingchanges'] = False
+    opts['outgoing'] = False
     postreview(ui, repo, **opts)
     
     expected = open('mercurial_reviewboard/tests/diffs/two_revs_1', 'r').read()
@@ -21,6 +23,8 @@ def test_not_tip(mock_send):
     ui = mock_ui()
     repo = get_repo(ui, 'two_revs_clone_not_tip')
     opts = get_initial_opts()
+    opts['outgoingchanges'] = False
+    opts['outgoing'] = False
     postreview(ui, repo, **opts)
     
     expected = open('mercurial_reviewboard/tests/diffs/two_revs_0', 

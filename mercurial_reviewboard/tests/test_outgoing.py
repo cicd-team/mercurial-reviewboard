@@ -13,6 +13,7 @@ def test_outgoing(mock_send):
     opts = get_initial_opts()
     opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/no_revs'
     opts['outgoingchanges'] = True
+    opts['outgoing'] = False
     postreview(ui, repo, **opts)
     
     expected = open('mercurial_reviewboard/tests/diffs/outgoing', 'r').read()
@@ -26,6 +27,7 @@ def test_outgoing_one_rev(mock_send):
     opts = get_initial_opts()
     opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/no_revs'
     opts['outgoingchanges'] = True
+    opts['outgoing'] = False
     postreview(ui, repo, **opts)
     
     expected = open('mercurial_reviewboard/tests/diffs/outgoing_one_rev', 
@@ -40,6 +42,7 @@ def test_outgoing_one_rev_no_outgoing_flag(mock_send):
         repo = get_repo(ui, 'one_rev')
         opts = get_initial_opts()
         opts['outgoingchanges'] = True
+        opts['outgoing'] = False
         postreview(ui, repo, **opts)
     
         expected = open('mercurial_reviewboard/tests/diffs/outgoing_one_rev', 
@@ -60,6 +63,7 @@ def test_outgoing_with_branch(mock_send):
     opts = get_initial_opts()
     opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/two_revs'
     opts['outgoingchanges'] = True
+    opts['outgoing'] = False
     postreview(ui, repo, '2', **opts)
     
     expected = open('mercurial_reviewboard/tests/diffs/outgoing_with_branch', 
