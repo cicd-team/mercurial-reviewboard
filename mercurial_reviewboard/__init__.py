@@ -260,13 +260,13 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
 
     repositories = sorted(repositories, key=operator.attrgetter('name'),
                           cmp=lambda x, y: cmp(x.lower(), y.lower()))
-    
+
     remotepath = expandpath(ui, opts['outgoingrepo']).lower()
     repo_id = None
     for r in repositories:
         if r.tool != 'Mercurial':
             continue
-        if r.path.lower() == remotepath:
+        if is_same_repo(r.path, remotepath):
             repo_id = str(r.id)
             ui.status('Using repository: %s\n' % r.name)
     if repo_id == None and opts['interactive']:
@@ -288,6 +288,14 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         raise util.Abort(_('could not determine repository - use interactive flag'))
     return repo_id
 
+def is_same_repo(path1, path2):
+    if not path1.endswith('/'):
+        path1 += '/'
+
+    if not path2.endswith('/'):
+        path2 += '/'
+
+    return path1.lower() == path2.lower()
 
 def createfields(ui, repo, c, parentc, opts):
     fields = {}
