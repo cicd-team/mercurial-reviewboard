@@ -384,8 +384,8 @@ def findoutgoing(repo, remoterepo):
         return repo.findoutgoing(remoterepo)
 
     try:
-        common, outheads = discovery.findcommonoutgoing(repo, remoterepo)
-        return repo.changelog.findmissing(common=common, heads=outheads)
+        outgoing = discovery.findcommonoutgoing(repo, remoterepo)
+        return outgoing.missing
     except AttributeError:
         # Must be earlier than 1.9
         return discovery.findoutgoing(repo, remoterepo)
