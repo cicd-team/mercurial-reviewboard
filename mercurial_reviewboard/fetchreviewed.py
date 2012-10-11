@@ -93,7 +93,7 @@ class ReviewFetcher(object):
     def get_local_repo(self):
         rname = self.rbrepo.name
         if not os.path.exists(rname):
-            commands.clone(self.ui, self.rbrepo.path, rname)
+            commands.clone(self.ui, str(self.rbrepo.path), str(rname))
 
         repo = hg.repository(self.ui, rname)
         commands.pull(self.ui, repo, self.rbrepo.path)
