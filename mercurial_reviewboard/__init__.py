@@ -366,10 +366,8 @@ def createfields(ui, repo, c, parentc, opts):
 def remoteparent(ui, repo, opts, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
     if LooseVersion(util.version()) >= LooseVersion('2.3'):
-        print("remoteparent >=2.3")
         remoterepo = hg.peer(repo, opts, remotepath)
     else:
-        print("remoteparent <2.3")
         remoterepo = hg.repository(ui, remotepath)
     
     out = findoutgoing(repo, remoterepo)
@@ -391,10 +389,8 @@ def findoutgoing(repo, remoterepo):
 
     try:
         if LooseVersion(util.version()) >= LooseVersion('2.1'):
-            print(">=2.1")
             outgoing = discovery.findcommonoutgoing(repo, remoterepo)
             return outgoing.missing
-        print("<2.1")
         common, outheads = discovery.findcommonoutgoing(repo, remoterepo)
         return repo.changelog.findmissing(common=common, heads=outheads)
     
