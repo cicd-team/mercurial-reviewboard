@@ -2,6 +2,7 @@
 
 import os, errno, re, sys, tempfile
 import cStringIO
+from distutils.version import LooseVersion
 import operator
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
@@ -97,9 +98,9 @@ def find_rparent(ui, repo, c, opts):
     if master:
         rparent = repo[master]
     elif outgoingrepo:
-        rparent = remoteparent(ui, repo, c, upstream=outgoingrepo)
+        rparent = remoteparent(ui, repo, opts, c, upstream=outgoingrepo)
     elif outgoing:
-        rparent = remoteparent(ui, repo, c)
+        rparent = remoteparent(ui, repo, opts, c)
     else:
         rparent = None
     return rparent
@@ -362,9 +363,14 @@ def createfields(ui, repo, c, parentc, opts):
     return fields
 
 
-def remoteparent(ui, repo, ctx, upstream=None):
+def remoteparent(ui, repo, opts, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
-    remoterepo = hg.repository(ui, remotepath)
+    if LooseVersion(util.version()) >= LooseVersion('2.3'):
+        print("remoteparent >=2.3")
+        remoterepo = hg.peer(repo, opts, remotepath)
+    else:
+        print("remoteparent <2.3")
+        remoterepo = hg.repository(ui, remotepath)
     
     out = findoutgoing(repo, remoterepo)
     
@@ -384,8 +390,14 @@ def findoutgoing(repo, remoterepo):
         return repo.findoutgoing(remoterepo)
 
     try:
-        outgoing = discovery.findcommonoutgoing(repo, remoterepo)
-        return outgoing.missing
+        if LooseVersion(util.version()) >= LooseVersion('2.1'):
+            print(">=2.1")
+            outgoing = discovery.findcommonoutgoing(repo, remoterepo)
+            return outgoing.missing
+        print("<2.1")
+        common, outheads = discovery.findcommonoutgoing(repo, remoterepo)
+        return repo.changelog.findmissing(common=common, heads=outheads)
+    
     except AttributeError:
         # Must be earlier than 1.9
         return discovery.findoutgoing(repo, remoterepo)

@@ -4,6 +4,7 @@ repository.
 """
 import os
 
+from distutils.version import LooseVersion
 from pprint import pprint
 
 from mercurial.i18n import _
@@ -63,6 +64,7 @@ class ReviewFetcher(object):
         self.ui = ui
         self.reviewboard = reviewboard
         self.rbrepo = rbrepo
+        self.opts = opts
 
         self.dryrun = opts.get('dry_run', False)
 
@@ -182,7 +184,12 @@ class ReviewFetcher(object):
 
     def strip_outgoing(self):
         from . import findoutgoing
-        remoterepo = hg.repository(self.ui, self.rbrepo.path)
+        
+        if LooseVersion(util.version()) >= LooseVersion('2.3'):
+            remoterepo = hg.peer(self.repo, self.opts, self.rbrepo.path)
+        else:
+            remoterepo = hg.repository(self.ui, self.rbrepo.path)
+        
         out = findoutgoing(self.repo, remoterepo)
         if not out:
             return
