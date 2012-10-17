@@ -15,9 +15,12 @@ from mercurial import discovery
 from mercurial import scmutil
 from mercurial import commands
 from mercurial import util
+import datetime
 
 import reviewboard
+from SingleRun import SingleRun
 
+@SingleRun("fetchreviewed")
 def fetchreviewed(ui, repo, **opts):
     """fetch approved changes from reviewboard and apply to relevant repository.
 
@@ -38,6 +41,10 @@ def fetchreviewed(ui, repo, **opts):
     repo. This is required  to get a clean clone of remote repo before import.
     """
     from . import find_server, getreviewboard
+    
+    ui.status("\n\nStarting fetchreview...\n")
+    ui.status(_("%s\n") % str(datetime.datetime.now()))
+
     find_server(ui, opts)
     reviewboard = getreviewboard(ui, opts)
 
@@ -46,6 +53,9 @@ def fetchreviewed(ui, repo, **opts):
     for r in rbrepos:
         rf = ReviewFetcher(ui, reviewboard, r, opts)
         rf.fetch_reviewed()
+    
+    ui.status(_("%s\n") % str(datetime.datetime.now()))
+    ui.status("Finished fetchreview.\n")
 
 def get_repositories(reviewboard):
     """Return list of registered mercurial repositories"""
@@ -85,6 +95,8 @@ class ReviewFetcher(object):
                 fetched = self.fetch_review_request(request)
                 if fetched and not self.dryrun:
                     self.report_success(request)
+                else:
+                    self.ui.status(_("Review request %s is probably already submited \n") % request.id)
 
             except util.Abort, e:
                 self.ui.status(_("Processing of request %s failed (%s)\n") % (request.id, e.message))
@@ -196,7 +208,11 @@ class ReviewFetcher(object):
 
         cl = self.repo.changelog
         revs = set([cl.rev(r) for r in out])
-        descendants = set(cl.descendants(*revs))
+        if LooseVersion(util.version()) >= LooseVersion('2.3'):
+            descendants = set(cl.descendants(revs))
+        else:
+            descendants = set(cl.descendants(*revs))
+        
         roots = revs.difference(descendants)
 
         roots = list(roots)
