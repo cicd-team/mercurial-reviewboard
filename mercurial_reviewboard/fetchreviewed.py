@@ -96,7 +96,7 @@ class ReviewFetcher(object):
                 if fetched and not self.dryrun:
                     self.report_success(request)
                 else:
-                    self.ui.status(_("Review request %s is probably already submited \n") % request.id)
+                    self.ui.status(_("Review request %s was not submited \n") % request.id)
 
             except util.Abort, e:
                 self.ui.status(_("Processing of request %s failed (%s)\n") % (request.id, e.message))
@@ -116,9 +116,9 @@ class ReviewFetcher(object):
     def fetch_review_request(self, request):
         bundles = self.reviewboard.download_attachement_with_given_caption(request.id, 'changeset bundle')
         if not bundles:
-            self.ui.warn(_("Warning: no mercurial bundles were found in review request %s\n") % request.id)
+            self.ui.status(_("Warning: no mercurial bundles were found in review request %s\n") % request.id)
             return False
-
+        
         self.ui.pushbuffer()
         try:
             try:
@@ -141,6 +141,11 @@ class ReviewFetcher(object):
         for branch, heads in branchheads.items():
             self.merge_heads(branch, heads, request.id)
 
+
+        for bundle in bundles:
+            self.ui.status(_("Deleting local bundle: %s\n") % str(bundle))
+            os.unlink(bundle)
+        
         return True
 
     def merge_heads(self, branch, heads, requestid):
@@ -168,6 +173,7 @@ class ReviewFetcher(object):
                                                          BUNDLE_ATTACHMENT_CAPTION,
                                                          _("%s (submitted)") % BUNDLE_ATTACHMENT_CAPTION)
         self.reviewboard.publish(request.id)
+        self.ui.status(_("Submiting review request %s\n") % request.id)
         self.reviewboard.submit(request.id)
 
     def push_reviewed(self):
