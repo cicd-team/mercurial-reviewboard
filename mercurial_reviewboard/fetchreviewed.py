@@ -119,11 +119,14 @@ class ReviewFetcher(object):
             self.ui.status(_("Warning: no mercurial bundles were found in review request %s\n") % request.id)
             return False
         
+        self.ui.status(_("Bundles found: %s\n") % str(bundles))
         self.ui.pushbuffer()
         try:
             try:
+                self.ui.status("Apply bundle to local repository\n")
                 commands.unbundle(self.ui, self.repo, *bundles)
             except LookupError, e:
+                self.ui.status(_("Cannot unbundle: %s\n") % e.message)
                 raise util.Abort("Cannot unbundle: %s" % e.message)
         finally:
             self.ui.popbuffer()
@@ -153,6 +156,7 @@ class ReviewFetcher(object):
             return  # nothing to merge
 
         if len(heads) > 2:
+            self.ui.status(_("Review request bundle import resulted in more than two heads on branch %s") % branch)
             raise util.Abort(_("Review request bundle import resulted in more than two heads on branch %s") % branch)
 
         self.ui.status(_("Merging heads for branch %s\n") % branch)
@@ -177,7 +181,7 @@ class ReviewFetcher(object):
         self.reviewboard.submit(request.id)
 
     def push_reviewed(self):
-        commands.push(self.ui, self.repo, self.rbrepo.path)
+        commands.push(self.ui, self.repo, self.rbrepo.path, new_branch=True)
 
     def report_failure(self, request, exception):
         self.ui.status(_("Reporting failure to review request %s\n") % request.id)
@@ -197,6 +201,7 @@ class ReviewFetcher(object):
         self.ui.pushbuffer()
         try:
             commands.update(self.ui, self.repo, clean=True)
+            commands.revert(self.ui, self.repo, all=True, no_backup=True)
         finally:
             self.ui.popbuffer()
 

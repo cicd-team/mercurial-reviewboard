@@ -219,7 +219,7 @@ class HttpClient:
                 'Content-Length': str(len(body))
                 }
         try:
-            r = ApiRequest(str(method), str(url), body, headers)
+            r = ApiRequest(str(method), str(url).replace(" ", "%20"), body, headers)
             data = urllib2.urlopen(r).read()
             try:
                 self._cj.save(self.cookie_file)
