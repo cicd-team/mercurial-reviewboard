@@ -181,7 +181,12 @@ class ReviewFetcher(object):
         self.reviewboard.submit(request.id)
 
     def push_reviewed(self):
-        commands.push(self.ui, self.repo, self.rbrepo.path, new_branch=True)
+        push_result = commands.push(self.ui, self.repo, self.rbrepo.path, new_branch=True)
+        self.ui.status(_("Push result %d\n") % push_result)
+        if (push_result != 0):
+            self.ui.status(_("Cannot push. Please resubmit review request. Push command returned: %d") % push_result)
+            raise util.Abort("Cannot push. Please resubmit review request. Push command returned: %d" % push_result)
+            
 
     def report_failure(self, request, exception):
         self.ui.status(_("Reporting failure to review request %s\n") % request.id)
