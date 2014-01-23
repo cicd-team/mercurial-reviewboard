@@ -223,6 +223,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
     try:
         reviewboard.delete_attachments_with_caption(request_id, BUNDLE_ATTACHMENT_CAPTION)
+        fields['bugs_closed'] = ""
         reviewboard.update_request(request_id, fields, diff, parentdiff, files)
         if opts['publish']:
             reviewboard.publish(request_id)
@@ -349,7 +350,8 @@ def createfields(ui, repo, c, parentc, opts):
         else:
             description = changesets_string
         fields['description'] = description 
-        
+        bugs_list = re.findall( r'([A-Z]+-[0-9]+)', description)
+        fields['bugs_closed'] = "".join(bugs_list)        
         fields['branch'] = c.branch()
 
     for field in ('target_groups', 'target_people', 'bugs_closed'):

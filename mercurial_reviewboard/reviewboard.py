@@ -301,6 +301,7 @@ class Api20Client(ApiClient):
         ApiClient.__init__(self, httpclient)
         self._repositories = None
         self._pending_user_requests = None
+        self._pending_requests = None
         self._requestcache = {}
 
     def login(self, username=None, password=None):
@@ -323,15 +324,33 @@ class Api20Client(ApiClient):
             today = datetime.datetime.today()
             sevenDaysAgo = today - delta
             rsp = self._api_request('GET', '/api/review-requests/' +
-                                           '?from-user=%s' % usr +
-                                           '&status=pending' +
-                                           '&max-results=50' +
-                                           '&last-updated-from=%s' % sevenDaysAgo)
+                                    '?from-user=%s' % usr +
+                                    '&status=pending' +
+                                    '&max-results=50' +
+                                    '&last-updated-from=%s' % sevenDaysAgo)
             self._pending_user_requests = []
             for r in rsp['review_requests']:
                 self._pending_user_requests += [Request(r['id'], r['summary'].strip())]
-                
-        return self._pending_user_requests    
+                    
+        return self._pending_user_requests
+        
+    def pending_requests(self):
+        # Get all the pending request within the last week for a given user
+        if not self._pending_requests:
+            usr = str(self._httpclient._password_mgr.rb_user)
+            delta = datetime.timedelta(days=7)
+            today = datetime.datetime.today()
+            sevenDaysAgo = today - delta
+            rsp = self._api_request('GET', '/api/review-requests/' +
+                                    '?status=pending' +
+                                    '&max-results=50' +
+                                    '&last-updated-from=%s' % sevenDaysAgo)
+            self._pending_requests = []
+            for r in rsp['review_requests']:
+                self._pending_requests += [Request(r['id'], r['summary'].strip())]
+                    
+        return self._pending_requests
+
         
     def shipable_requests(self, repo_id):
         # Get all the shipable request

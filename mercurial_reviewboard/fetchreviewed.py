@@ -4,6 +4,8 @@ repository.
 """
 import os
 
+import re
+
 from distutils.version import LooseVersion
 from pprint import pprint
 
@@ -16,6 +18,13 @@ from mercurial import scmutil
 from mercurial import commands
 from mercurial import util
 import datetime
+
+import urllib
+import urllib2
+import base64
+import cookielib
+import json
+from pprint import pprint
 
 import reviewboard
 from SingleRun import SingleRun
@@ -53,6 +62,7 @@ def fetchreviewed(ui, repo, **opts):
     for r in rbrepos:
         rf = ReviewFetcher(ui, reviewboard, r, opts)
         rf.fetch_reviewed()
+        rf.fetch_pending()
     
     ui.status(_("%s\n") % str(datetime.datetime.now()))
     ui.status("Finished fetchreview.\n")
@@ -77,7 +87,7 @@ class ReviewFetcher(object):
         self.opts = opts
 
         self.dryrun = opts.get('dry_run', False)
-
+	
     def fetch_reviewed(self):
         """Fetch changes into repository"""
         shipable = self.reviewboard.shipable_requests(self.rbrepo.id)
@@ -96,13 +106,54 @@ class ReviewFetcher(object):
                 if fetched and not self.dryrun:
                     self.report_success(request)
                 else:
-                    self.ui.status(_("Review request %s was not submited \n") % request.id)
-
+                    self.ui.status(_("Review request %s was not submitted \n") % request.id)
+                self.update_jira(request, "Shipped")
+				
             except util.Abort, e:
                 self.ui.status(_("Processing of request %s failed (%s)\n") % (request.id, e.message))
                 if not self.dryrun:
                     self.report_failure(request, e)
-
+					
+    def fetch_pending(self):
+        pending = self.reviewboard.pending_requests()
+        if not pending:
+            self.ui.status(_("Nothing pending found for repository %s\n") % self.rbrepo.name)
+            return
+        self.ui.status(_("Processing pending review requests for repo %s\n") % self.rbrepo.name)
+        self.repo = self.get_local_repo()    	
+        if os.path.exists("reviews.json"):
+            infile = file("reviews.json", "r+")
+            data = json.load(infile)
+            reviews = data['reviews']
+            request_id_exists = False
+            new_reviews = []
+            for request in pending: 
+                for review in reviews:
+                    if request.id == review['id']:
+                        request_id_exists = True
+                        review = {'id' : request.id, 'summary' : request.summary}
+                        new_reviews.append(review)
+                        break
+                if request_id_exists is False:
+                    review = {'id' : request.id, 'summary' : request.summary}
+                    new_reviews.append(review)
+                    self.update_jira(request, "Pending")
+            
+            outfile = file("reviews.json", "w+")
+            data = json.dumps({'reviews' : new_reviews}) 
+            outfile.write(data)
+            outfile.close()
+        else:
+            outfile = file("reviews.json", "w+")
+            reviews = []
+            for request in pending:
+                self.ui.status(_("Processing review request %s\n") % request.id)       
+                review = {'id' : request.id, 'summary' : request.summary}
+                reviews.append(review)
+                self.update_jira(request, "Pending")
+            data = json.dumps({'reviews' : reviews}) 
+            outfile.write(data)
+            outfile.close()
 
     def get_local_repo(self):
         rname = self.rbrepo.name
@@ -147,9 +198,62 @@ class ReviewFetcher(object):
 
         for bundle in bundles:
             self.ui.status(_("Deleting local bundle: %s\n") % str(bundle))
-            os.unlink(bundle)
-        
+            os.unlink(bundle)        
+
         return True
+
+    def jira_section_available(self):
+        if self.ui.config('jira', 'server', None) is None:
+            self.ui.status(_("You don't have a server specified in [jira] section in your  ~/.hgrc.\n"))
+            return False
+        if self.ui.config('jira', 'user', None) is None:
+            self.ui.status(_("You don't have a user specified in [jira] section in your  ~/.hgrc.\n"))
+            return False
+        if self.ui.config('jira', 'password', None) is None:
+            self.ui.status(_("You don't have a password specified in [jira] section in your  ~/.hgrc.\n"))
+            return False
+        return True
+        
+    def update_jira(self, request, message=None): 
+        if self.jira_section_available() is False:
+            return
+        review_board_message = "Review request submitted."
+        jira_tickets = re.findall( r'([A-Z]+-[0-9]+)', request.summary)
+        jira_server = self.ui.config('jira', 'server')
+        jira_user = self.ui.config('jira', 'user')
+        jira_password = self.ui.config('jira', 'password')
+	
+        #Get Submitter info from review
+        review = self.reviewboard._get_request(request.id)
+        submitter_name = review['links']['submitter']['title']
+        submitter_href = review['links']['submitter']['href']
+	
+        reviewboard_server = self.ui.config('reviewboard', 'server')
+        review_url = reviewboard_server + "/r/" + str(request.id)
+        jira_comment = "Review Board: " + message + "!\n" + "User: " + submitter_name + "\n" + "Link: " + review_url
+	
+        for jira_ticket in jira_tickets:
+            self.ui.status(_("Jira ticket: %s\n") % str(jira_ticket))
+            self.ui.status(_("Adding comment for ticket...\n"))
+            url = jira_server + '/rest/api/latest/issue/%s/comment' % jira_ticket
+            auth = base64.encodestring('%s:%s' % (jira_user, jira_password)).replace('\n', '')
+
+            data = json.dumps({'body': jira_comment})
+
+            request = urllib2.Request(url, data, {
+                'Authorization': 'Basic %s' % auth,
+                'X-Atlassian-Token': 'no-check',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+                })
+		
+            try:
+                response = urllib2.urlopen(request).read()
+            except IOError, e: 
+                if hasattr(e, 'code') and e.code == 404:
+                    self.ui.status(_("Jira ticket: %s") % str(jira_ticket) + (" does not exist!\n"))
+            else:                               
+                self.ui.status(_("Comment added.\n"))
 
     def merge_heads(self, branch, heads, requestid):
         if len(heads) == 1:
@@ -177,7 +281,7 @@ class ReviewFetcher(object):
                                                          BUNDLE_ATTACHMENT_CAPTION,
                                                          _("%s (submitted)") % BUNDLE_ATTACHMENT_CAPTION)
         self.reviewboard.publish(request.id)
-        self.ui.status(_("Submiting review request %s\n") % request.id)
+        self.ui.status(_("Submitting review request %s\n") % request.id)
         self.reviewboard.submit(request.id)
 
     def push_reviewed(self):
