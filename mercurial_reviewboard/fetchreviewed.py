@@ -118,9 +118,9 @@ class ReviewFetcher(object):
     def fetch_pending(self):
         pending = self.reviewboard.pending_requests()
         if not pending:
-            self.ui.status(_("Nothing pending found for repository %s\n") % self.rbrepo.name)
+            #self.ui.status(_("Nothing pending found for repository %s\n") % self.rbrepo.name)
             return
-        self.ui.status(_("Processing pending review requests for repo %s\n") % self.rbrepo.name)
+        #self.ui.status(_("Processing pending review requests for repo %s\n") % self.rbrepo.name)
         if os.path.exists("reviews.json"):
             infile = file("reviews.json", "r+")
             data = json.load(infile)
