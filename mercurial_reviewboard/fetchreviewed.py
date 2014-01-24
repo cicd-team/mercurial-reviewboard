@@ -105,9 +105,10 @@ class ReviewFetcher(object):
                 fetched = self.fetch_review_request(request)
                 if fetched and not self.dryrun:
                     self.report_success(request)
+                    self.update_jira(request, "Shipped")
                 else:
                     self.ui.status(_("Review request %s was not submitted \n") % request.id)
-                self.update_jira(request, "Shipped")
+
 				
             except util.Abort, e:
                 self.ui.status(_("Processing of request %s failed (%s)\n") % (request.id, e.message))
@@ -120,7 +121,6 @@ class ReviewFetcher(object):
             self.ui.status(_("Nothing pending found for repository %s\n") % self.rbrepo.name)
             return
         self.ui.status(_("Processing pending review requests for repo %s\n") % self.rbrepo.name)
-        self.repo = self.get_local_repo()    	
         if os.path.exists("reviews.json"):
             infile = file("reviews.json", "r+")
             data = json.load(infile)
