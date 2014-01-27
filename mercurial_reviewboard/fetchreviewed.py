@@ -230,7 +230,7 @@ class ReviewFetcher(object):
 	
         reviewboard_server = self.ui.config('reviewboard', 'server')
         review_url = reviewboard_server + "/r/" + str(request.id)
-        jira_comment = "Review Board: " + message + "!\n" + "User: " + submitter_name + "\n" + "Link: " + review_url
+        jira_comment = "Review Board: " + message + "!\n" + "User: [~" + submitter_name + "]\n" + "Link: " + review_url
 	
         for jira_ticket in jira_tickets:
             self.ui.status(_("Jira ticket: %s\n") % str(jira_ticket))
