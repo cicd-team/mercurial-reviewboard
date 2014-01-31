@@ -219,6 +219,7 @@ class ReviewFetcher(object):
             return
         review_board_message = "Review request submitted."
         jira_tickets = re.findall( r'([A-Z]+-[0-9]+)', request.summary)
+        jira_tickets = list(set(jira_tickets))
         jira_server = self.ui.config('jira', 'server')
         jira_user = self.ui.config('jira', 'user')
         jira_password = self.ui.config('jira', 'password')
