@@ -64,6 +64,13 @@ and 'default' in this order of precedence. 'reviewboard' may be used if the
 repository accessible to Review Board is not the upstream repository.
 '''
 
+    '''
+HG issue 3841 workaround
+https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unknown
+'''
+    oldin, oldout, olderr = sys.stdin, sys.stdout, sys.stderr
+    sys.stdin, sys.stdout, sys.stderr = ui.fin, ui.fout, ui.ferr
+    
     ui.status('postreview plugin, version %s\n' % __version__)
     
     # checks to see if the server was set
@@ -89,6 +96,8 @@ repository accessible to Review Board is not the upstream repository.
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
     send_review(ui, repo, c, parent, diff, parentdiff, opts)
+    
+    sys.stdin, sys.stdout, sys.stderr = oldin, oldout, olderr
 
 def find_rparent(ui, repo, c, opts):
     outgoing = opts.get('outgoing')
@@ -177,7 +186,7 @@ def launch_webbrowser(ui, request_url):
     import webbrowser
     demandimport.enable()
     
-    ui.status('browser launched\n')
+    #ui.status('browser launched\n')
     webbrowser.open(request_url)
 
 
