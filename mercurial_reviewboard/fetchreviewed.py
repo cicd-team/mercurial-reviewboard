@@ -184,8 +184,10 @@ class ReviewFetcher(object):
 
         # find and merge any heads, introduced by importing bundle
         heads = self.repo.heads()
+        #heads = repo.heads()
+        openheads = [h for h in heads if not self.repo[h].extra().get('close', False)]
         branchheads = {}
-        for head in heads:
+        for head in openheads:
             ctx = self.repo[head]
             branch = ctx.branch()
             if branch not in branchheads:
