@@ -193,7 +193,9 @@ def launch_webbrowser(ui, request_url):
 def getdiff(ui, repo, r, parent):
     '''return diff for the specified revision'''
     output = ""
-    for chunk in patch.diff(repo, parent.node(), r.node()):
+    opts = mdiff.defaultopts
+    opts.git = True
+    for chunk in patch.diff(repo, parent.node(), r.node(), opts=opts):
         output += chunk
     return output
 
