@@ -214,7 +214,7 @@ def getdiff(ui, repo, r, parent):
     if branch and branch != 'default':
         output += "# Branch %s\n" % branch
     output += "# Node ID %s\n" % hex(node)
-    output += "# Parent  %s\n" % hex(prev)
+    output += "# Parent  %s\n" % hex(parent.node())
     if len(parents) > 1:
         output += "# Parent  %s\n" % hex(parents[1])
     output += ctx.description().rstrip()
