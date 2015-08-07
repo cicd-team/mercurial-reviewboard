@@ -8,6 +8,7 @@ import operator
 from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
 from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
+from mercurial.node import hex
 
 from reviewboard import make_rbclient, ReviewBoardError
 from fetchreviewed import fetchreviewed
@@ -193,7 +194,35 @@ def launch_webbrowser(ui, request_url):
 def getdiff(ui, repo, r, parent):
     '''return diff for the specified revision'''
     output = ""
-    for chunk in patch.diff(repo, parent.node(), r.node()):
+    
+    # the following is for Git style commit (similarly as in cmdutil.export, previously patch.export command)
+    
+    ctx = repo[r.node()]
+    node = ctx.node()
+    parents = [p.node() for p in ctx.parents() if p]
+    branch = ctx.branch()
+
+    if parents:
+        prev = parents[0]
+    else:
+        prev = nullid
+    
+    output += "# HG changeset patch\n"
+    output += "# User %s\n" % ctx.user()
+    output += "# Date %d %d\n" % ctx.date()
+    output += "#      %s\n" % util.datestr(ctx.date())
+    if branch and branch != 'default':
+        output += "# Branch %s\n" % branch
+    output += "# Node ID %s\n" % hex(node)
+    output += "# Parent  %s\n" % hex(prev)
+    if len(parents) > 1:
+        output += "# Parent  %s\n" % hex(parents[1])
+    output += ctx.description().rstrip()
+    output += "\n\n"
+    
+    opts = mdiff.defaultopts
+    opts.git = True
+    for chunk in patch.diff(repo, parent.node(), r.node(), opts=opts):
         output += chunk
     return output
 
