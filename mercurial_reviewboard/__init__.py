@@ -300,7 +300,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     repositories = sorted(repositories, key=operator.attrgetter('name'),
                           cmp=lambda x, y: cmp(x.lower(), y.lower()))
 
-    remotepath = expandpath(ui, opts['outgoingrepo']).lower()
+    remotepath = remove_username(expandpath(ui, opts['outgoingrepo']).lower())
     repo_id = None
     for r in repositories:
         if r.tool != 'Mercurial':
@@ -308,6 +308,8 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         if is_same_repo(r.path, remotepath):
             repo_id = str(r.id)
             ui.status('Using repository: %s\n' % r.name)
+            break
+
     if repo_id == None and opts['interactive']:
         ui.status('Repositories:\n')
         repo_ids = set()
@@ -326,6 +328,17 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     elif repo_id == None and not opts['interactive']:
         raise util.Abort(_('could not determine repository - use interactive flag'))
     return repo_id
+
+"""
+Removes the user name, if one has been provided in repo_path URL (such as 'https://username@hg.example.org').
+This often occurs when using keyring for storing remote repo passwords, etc.
+Returns the repo path without user name, suitable for comparing with reviewboard's repository list.
+"""
+def remove_username(repo_path):
+    username_pos = repo_path.find('@')
+    if( username_pos == -1 ): return repo_path
+    protocol_pos = repo_path.index('://')+3
+    return repo_path[:protocol_pos]+repo_path[username_pos+1:]
 
 def is_same_repo(path1, path2):
     if not path1.endswith('/'):
