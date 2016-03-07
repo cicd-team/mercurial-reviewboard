@@ -2,7 +2,7 @@
 
 import os, errno, re, sys, tempfile
 import cStringIO
-from distutils.version import LooseVersion
+from hgversion import HgVersion
 import operator
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
@@ -426,7 +426,7 @@ def createfields(ui, repo, c, parentc, opts):
 
 def remoteparent(ui, repo, opts, ctx, upstream=None):
     remotepath = expandpath(ui, upstream)
-    if LooseVersion(util.version()) >= LooseVersion('2.3'):
+	if HgVersion(util.version()) >= HgVersion('2.1'):
         remoterepo = hg.peer(repo, opts, remotepath)
     else:
         remoterepo = hg.repository(ui, remotepath)
