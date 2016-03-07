@@ -4,3 +4,6 @@ dist/*
 distribute-*
 ENV
 mercurial_reviewboard.egg-info/*
+*.pyo
+*.orig
+*.rej
