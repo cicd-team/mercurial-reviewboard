@@ -153,7 +153,7 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
         tmpfile = tempfile.NamedTemporaryFile(prefix='review_', suffix='.hgbundle', delete=False)
         tmpfile.close()
         if opts['old_server']:
-            ui.status('postreview using old server compatibility mode (bundle format v1)')
+            ui.status('postreview using old server compatibility mode (bundle format v1)\n')
             # request explicit 'v1' bundle format for our old creaky reviewboard server (running mercurial 2.0.x)
             # because it would be unable to read new 'v2' bundle format that mercurial 3.x uses
             bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),), type='bzip2-v1')
