@@ -152,7 +152,14 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     if opts['attachbundle']:
         tmpfile = tempfile.NamedTemporaryFile(prefix='review_', suffix='.hgbundle', delete=False)
         tmpfile.close()
-        bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),))
+        if opts['old_server']:
+            ui.status('postreview using old server compatibility mode (bundle format v1)')
+            # request explicit 'v1' bundle format for our old creaky reviewboard server (running mercurial 2.0.x)
+            # because it would be unable to read new 'v2' bundle format that mercurial 3.x uses
+            bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),), type='bzip2-v1')
+        else:
+            bundle(ui, repo, tmpfile.name, dest=None, base=(parentc.rev(),), rev=(c.rev(),))
+
         f = open(tmpfile.name,'rb')
         files = {BUNDLE_ATTACHMENT_CAPTION: {'filename': tmpfile.name, 'content': f.read()}}
         f.close()
@@ -579,6 +586,7 @@ cmdtable = {
         ('', 'password', '', _('password for the ReviewBoard site')),
         ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
 		('a', 'attachbundle', True , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
+        ('', 'old_server', False, _('Send v1 Bundle format if your ReviewBoard install has old Mercurial that does not recognize bundle2 format.')),
         ],
         _('hg postreview [OPTION]... [REVISION]')),
 
