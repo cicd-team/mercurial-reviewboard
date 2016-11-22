@@ -286,8 +286,9 @@ class HttpClient:
 
 
 class ApiClient:
-    def __init__(self, httpclient):
+    def __init__(self, httpclient, apiver):
         self._httpclient = httpclient
+        self.apiver = apiver
 
     def _api_request(self, method, url, fields=None, files=None):
         return self._httpclient.api_request(method, url, fields, files)
@@ -298,7 +299,7 @@ class Api20Client(ApiClient):
     """
 
     def __init__(self, httpclient):
-        ApiClient.__init__(self, httpclient)
+        ApiClient.__init__(self, httpclient, '2.0')
         self._repositories = None
         self._pending_user_requests = None
         self._pending_requests = None
@@ -459,7 +460,7 @@ class Api10Client(ApiClient):
     """
 
     def __init__(self, httpclient):
-        ApiClient.__init__(self, httpclient)
+        ApiClient.__init__(self, httpclient, '1.0')
         self._repositories = None
         self._requests = None
 

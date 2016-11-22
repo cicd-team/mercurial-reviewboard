@@ -266,6 +266,7 @@ def getreviewboard(ui, opts):
 
 def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
+    update_fields(reviewboard, fields)
     try:
         reviewboard.delete_attachments_with_caption(request_id, BUNDLE_ATTACHMENT_CAPTION)
         reviewboard.update_request(request_id, fields, diff, parentdiff, files)
@@ -279,7 +280,7 @@ def new_review(ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
 
     repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
-
+    update_fields(reviewboard, fields)
     try:
         request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff, files)
         if opts['publish']:
@@ -288,6 +289,16 @@ def new_review(ui, fields, diff, parentdiff, opts, files=None):
         raise util.Abort(_(unicode(msg)))
 
     return request_id
+
+
+def update_fields(reviewboard, fields):
+    '''Some fields are added or deprecated in API version 2.0
+       By default we prefer API v2.0 and have to fix data for backward compatibility.
+    '''
+    if reviewboard.apiver == '1.0':
+        # commit_id field is introduced in API 2.0 (changenum field is deprecated in favor of the commit_id field)
+        if 'commit_id' in fields:
+            fields['changenum'] = fields.pop('commit_id')
 
 
 def find_reviewboard_repo_id(ui, reviewboard, opts):
@@ -361,7 +372,10 @@ def createfields(ui, repo, c, parentc, opts):
     
 
     all_contexts = find_contexts(repo, parentc, c, opts)
-
+    # The latest unambiguous prefix of global changeset id (Commit field on UI)
+    # Should be set on creation and on any update of review request.
+    # commit_id field is introduced in reviewboard API 2.0
+    fields['commit_id'] = str(all_contexts[0])
     changesets_string = 'changesets:\n'
     changesets_string += \
         ''.join(['\t%s:%s "%s"\n' % (ctx.rev(), ctx, ctx.description()) \
