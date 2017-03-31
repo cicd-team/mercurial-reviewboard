@@ -357,7 +357,7 @@ class Api20Client(ApiClient):
         # Get all the shipable request
         rsp = self._api_request('GET', '/api/review-requests/' +
                                            '?status=pending&ship-it=1&repository=%s'%repo_id)
-        return [Request(r['id'], r['summary'].strip()) for r in rsp['review_requests']]
+        return [Request(r['id'], r['summary'].strip()) for r in rsp['review_requests'] if r['approved']]
 
     def get_attachments_with_caption(self, id, caption):
         req = self._get_request(id)
