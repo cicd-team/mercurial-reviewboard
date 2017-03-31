@@ -27,6 +27,7 @@ import json
 from pprint import pprint
 
 import reviewboard
+from reviewboard import ReviewBoardError
 from SingleRun import SingleRun
 
 @SingleRun("fetchreviewed")
@@ -283,7 +284,12 @@ class ReviewFetcher(object):
         self.reviewboard.rename_attachments_with_caption(request.id,
                                                          BUNDLE_ATTACHMENT_CAPTION,
                                                          _("%s (submitted)") % BUNDLE_ATTACHMENT_CAPTION)
-        self.reviewboard.publish(request.id)
+        try:
+            # ReviewBoard has serialization issue with attachments when webhook is active, so publish succeeds but throws error.
+            # Related ticket: https://hellosplat.com/s/beanbag/tickets/4542/
+            self.reviewboard.publish(request.id)
+        except ReviewBoardError:
+            pass
         self.ui.status(_("Submitting review request %s\n") % request.id)
         self.reviewboard.submit(request.id)
 
@@ -307,7 +313,12 @@ class ReviewFetcher(object):
         self.reviewboard.rename_attachments_with_caption(request.id,
                                                          BUNDLE_ATTACHMENT_CAPTION,
                                                          _("%s (failed)") % BUNDLE_ATTACHMENT_CAPTION)
-        self.reviewboard.publish(request.id)
+        try:
+            # ReviewBoard has serialization issue with attachments when webhook is active, so publish succeeds but throws error.
+            # Related ticket: https://hellosplat.com/s/beanbag/tickets/4542/
+            self.reviewboard.publish(request.id)
+        except ReviewBoardError:
+            pass
         self.reviewboard.review(request.id, reviewmsg)
 
     def clean_working_copy(self):
