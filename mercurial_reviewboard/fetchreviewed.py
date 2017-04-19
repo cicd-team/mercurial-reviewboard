@@ -7,49 +7,24 @@ import os
 import re
 
 from hgversion import HgVersion
-from pprint import pprint
 
 from mercurial.i18n import _
 
 from mercurial import hg
 from mercurial import repair
-from mercurial import discovery
-from mercurial import scmutil
 from mercurial import commands
 from mercurial import util
 import datetime
 
-import urllib
 import urllib2
 import base64
-import cookielib
 import json
-from pprint import pprint
 
-import reviewboard
 from reviewboard import ReviewBoardError
 from SingleRun import SingleRun
 
 @SingleRun("fetchreviewed")
 def fetchreviewed(ui, repo, **opts):
-    """fetch approved changes from reviewboard and apply to relevant repository.
-
-    This command is intended to be run as part of automated process, that
-    imports approved changes from review board.
-
-    It will download bundles, attached to review requests, marked as 'ship-it'
-    and import them into working repository. If import results in additional
-    head, automatic merge will be attempted.
-
-    If any problems are encountered during bundle import, review request will
-    be updated with problem description and further import will not be
-    attempted until problem is fixed.
-
-    Operation supports reviews from multiple repositories (of mercurial type).
-
-    Note, that this command will strip all outgoing changes out of working
-    repo. This is required  to get a clean clone of remote repo before import.
-    """
     from . import find_server, getreviewboard
     
     ui.status("\n\nStarting fetchreview...\n")
@@ -67,6 +42,7 @@ def fetchreviewed(ui, repo, **opts):
     
     ui.status(_("%s\n") % str(datetime.datetime.now()))
     ui.status("Finished fetchreview.\n")
+
 
 def get_repositories(reviewboard):
     """Return list of registered mercurial repositories"""

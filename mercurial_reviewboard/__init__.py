@@ -1,24 +1,34 @@
 '''post changesets to a reviewboard server'''
 
-import os, errno, re, sys, tempfile
-import cStringIO
+import os, re, sys, tempfile
 from hgversion import HgVersion
 import operator
+
 
 from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
 from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
-from mercurial.node import hex
+from mercurial.node import (hex, nullid)
 
 from reviewboard import make_rbclient, ReviewBoardError
-from fetchreviewed import fetchreviewed
-
 
 __version__ = '4.1.0'
 
+cmdtable = {}
+command = cmdutil.command(cmdtable)
+
 BUNDLE_ATTACHMENT_CAPTION = 'changeset bundle'
 
+
+@command('pullreviewed',
+         [('s', 'submit', False, _('if unbundle is successfull, mark the review as submitted (implies --unbundle)')),
+          ('I', 'interactive', False, _('override the default summary and description')),
+          ('u', 'unbundle', False, _('unbundle the downloaded bundle')),
+          ('O', 'outgoingrepo', '', _('use specified repository to determine which reviewed bundles to pull'))],
+         _('hg pullreviewed '))
 def get_shipable_bundles(ui, repo, rev='.', **opts):
+    """TBD
+    """
     ui.status('postreview plugin, version %s\n' % __version__)
     find_server(ui, opts)
     reviewboard = getreviewboard(ui, opts)
@@ -37,6 +47,55 @@ def get_shipable_bundles(ui, repo, rev='.', **opts):
         raise util.Abort(_(unicode(msg)))
 
 
+@command('fetchreviewed',
+         [('n', 'dry-run', False, _("Perform the fetch, but do not modify remote resources (reviewboard and repositories)"))],
+         _('hg fetchreviewed [-p]'))
+def fetch_reviewed(ui, repo, **opts):
+    """fetch approved changes from reviewboard and apply to relevant repository.
+
+    This command is intended to be run as part of automated process, that
+    imports approved changes from review board.
+
+    It will download bundles, attached to review requests, marked as 'ship-it'
+    and import them into working repository. If import results in additional
+    head, automatic merge will be attempted.
+
+    If any problems are encountered during bundle import, review request will
+    be updated with problem description and further import will not be
+    attempted until problem is fixed.
+
+    Operation supports reviews from multiple repositories (of mercurial type).
+
+    Note, that this command will strip all outgoing changes out of working
+    repo. This is required  to get a clean clone of remote repo before import.
+    """
+    from fetchreviewed import fetchreviewed
+    fetchreviewed(ui, opts)
+
+
+@command('postreview',
+         [('o', 'outgoing', True, _('use upstream repository to determine the parent diff base')),
+         ('O', 'outgoingrepo', '', _('use specified repository to determine the parent diff base')),
+         ('i', 'repoid', '', _('specify repository id on reviewboard server')),
+         ('s', 'summary', '', _('specify a summary for the review request')),
+         ('m', 'master', '', _('use specified revision as the parent diff base')),
+         ('', 'server', '', _('ReviewBoard server URL')),
+         ('e', 'existing', '', _('existing request ID to update')),
+         ('u', 'update', False, _('update the fields of an existing request')),
+         ('p', 'publish', None, _('publish request immediately')),
+         ('', 'parent', '', _('parent revision for the uploaded diff')),
+         ('g', 'outgoingchanges', True, _('create diff with all outgoing changes')),
+         ('b', 'branch', False, _('create diff of all revisions on the branch')),
+         ('I', 'interactive', False, _('override the default summary and description')),
+         ('U', 'target_people', '', _('comma separated list of people needed to review the code')),
+         ('G', 'target_groups', '', _('comma separated list of groups needed to review the code')),
+         ('B', 'bugs_closed', '', _('comma separated list of bug IDs addressed by the change')),
+         ('', 'username', '', _('username for the ReviewBoard site')),
+         ('', 'password', '', _('password for the ReviewBoard site')),
+         ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
+         ('a', 'attachbundle', True , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
+         ('', 'old_server', False, _('Send v1 Bundle format if your ReviewBoard install has old Mercurial that does not recognize bundle2 format.'))],
+         _('hg postreview [OPTION]... [REVISION]'))
 def postreview(ui, repo, rev='.', **opts):
     '''post a changeset to a Review Board server
 
@@ -313,7 +372,7 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         raise util.Abort(_(unicode(msg)))
 
     if not repositories:
-        raise util.Abort(_('no repositories configured at %s' % server))
+        raise util.Abort(_('no repositories configured at %s' % find_server(ui, opts)))
 
     repositories = sorted(repositories, key=operator.attrgetter('name'),
                           cmp=lambda x, y: cmp(x.lower(), y.lower()))
@@ -549,67 +608,16 @@ def find_server(ui, opts):
         raise util.Abort(_(unicode(msg)))
     return server
 
+def get_repositories(reviewboard):
+    """Return list of registered mercurial repositories"""
+
+    repos = reviewboard.repositories()
+    return [r for r in repos if r.tool == 'Mercurial']
 
 def readline():
     line = sys.stdin.readline()
     return line
 
 
-cmdtable = {
-    "pullreviewed": 
-        (get_shipable_bundles,
-        [('s', 'submit', False,
-          _('if unbundle is successfull, mark the review as submitted (implies --unbundle)')),
-        ('I', 'interactive', False, 
-            _('override the default summary and description')),
-        ('u', 'unbundle', False,
-         _('unbundle the downloaded bundle')),
-         ('O', 'outgoingrepo', '',
-         _('use specified repository to determine which reviewed bundles to pull')),],
-        _('hg pullreviewed ')),
-    "postreview":
-        (postreview,
-        [
-        ('o', 'outgoing', True,
-         _('use upstream repository to determine the parent diff base')),
-        ('O', 'outgoingrepo', '',
-         _('use specified repository to determine the parent diff base')),
-        ('i', 'repoid', '',
-         _('specify repository id on reviewboard server')),
-        ('s', 'summary', '', _('specify a summary for the review request')),
-        ('m', 'master', '',
-         _('use specified revision as the parent diff base')),
-        ('', 'server', '', _('ReviewBoard server URL')),
-        ('e', 'existing', '', _('existing request ID to update')),
-        ('u', 'update', False, _('update the fields of an existing request')),
-        ('p', 'publish', None, _('publish request immediately')),
-        ('', 'parent', '', _('parent revision for the uploaded diff')),
-        ('g', 'outgoingchanges', True, 
-            _('create diff with all outgoing changes')),
-        ('b', 'branch', False, 
-            _('create diff of all revisions on the branch')),
-        ('I', 'interactive', False, 
-            _('override the default summary and description')),
-        ('U', 'target_people', '', 
-            _('comma separated list of people needed to review the code')),
-        ('G', 'target_groups', '', 
-            _('comma separated list of groups needed to review the code')),
-        ('B', 'bugs_closed', '', 
-            _('comma separated list of bug IDs addressed by the change')),
-        ('', 'username', '', _('username for the ReviewBoard site')),
-        ('', 'password', '', _('password for the ReviewBoard site')),
-        ('', 'apiver', '', _('ReviewBoard API version (e.g. 1.0, 2.0)')),
-		('a', 'attachbundle', True , _('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
-        ('', 'old_server', False, _('Send v1 Bundle format if your ReviewBoard install has old Mercurial that does not recognize bundle2 format.')),
-        ],
-        _('hg postreview [OPTION]... [REVISION]')),
-
-    "fetchreviewed":
-        (fetchreviewed,
-         [
-          ('n', 'dry-run', False, _("Perform the fetch, but do not modify remote resources (reviewboard and repositories)")),
-          ],
-         _('hg fetchreviewed [-p]')),
-}
-
-commands.optionalrepo += ' fetchreviewed'
+if util.safehasattr(commands, 'optionalrepo'):
+    commands.optionalrepo += ' fetchreviewed'
