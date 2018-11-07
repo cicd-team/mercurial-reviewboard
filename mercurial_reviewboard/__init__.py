@@ -5,7 +5,7 @@ from hgversion import HgVersion
 import operator
 
 
-from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands
+from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands, error
 from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
 from mercurial.node import (hex, nullid)
@@ -44,7 +44,7 @@ def get_shipable_bundles(ui, repo, rev='.', **opts):
                     reviewboard.submit(request_id)
                     print "submitted"
     except ReviewBoardError, msg:
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
 
 
 @command('fetchreviewed',
@@ -138,7 +138,7 @@ https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unkn
     
     check_parent_options(opts)
 
-    c = repo.changectx(rev)
+    c = repo[rev]
 
     rparent = find_rparent(ui, repo, c, opts)
     ui.debug('remote parent: %s\n' % rparent)
@@ -151,7 +151,7 @@ https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unkn
         if opts.get('outgoingchanges'):
             msg += _("If using -g/--outgoingchanges, make sure you have some "
                      "(type 'hg out'). Did you forget to commit ('hg st')?")
-        raise util.Abort(msg)
+        raise error.Abort(msg)
 
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
@@ -321,7 +321,7 @@ def getreviewboard(ui, opts):
         return make_rbclient(server, username, password, proxy=proxy,
             apiver=opts.get('apiver'))
     except ReviewBoardError, msg:
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
 
 def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
@@ -332,7 +332,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
 
 
 def new_review(ui, fields, diff, parentdiff, opts, files=None):
@@ -345,7 +345,7 @@ def new_review(ui, fields, diff, parentdiff, opts, files=None):
         if opts['publish']:
             reviewboard.publish(request_id)
     except ReviewBoardError, msg:
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
 
     return request_id
 
@@ -369,10 +369,10 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
     try:
         repositories = reviewboard.repositories()
     except ReviewBoardError, msg:
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
 
     if not repositories:
-        raise util.Abort(_('no repositories configured at %s' % find_server(ui, opts)))
+        raise error.Abort(_('no repositories configured at %s' % find_server(ui, opts)))
 
     repositories = sorted(repositories, key=operator.attrgetter('name'),
                           cmp=lambda x, y: cmp(x.lower(), y.lower()))
@@ -398,12 +398,12 @@ def find_reviewboard_repo_id(ui, reviewboard, opts):
         if len(repositories) > 1:
             repo_id = ui.prompt('repository id:', 0)
             if not repo_id in repo_ids:
-                raise util.Abort(_('invalid repository ID: %s') % repo_id)
+                raise error.Abort(_('invalid repository ID: %s') % repo_id)
         else:
             repo_id = str(repositories[0].id)
             ui.status('repository id: %s\n' % repo_id)
     elif repo_id == None and not opts['interactive']:
-        raise util.Abort(_('could not determine repository - use interactive flag'))
+        raise error.Abort(_('could not determine repository - use interactive flag'))
     return repo_id
 
 """
@@ -554,14 +554,14 @@ def check_parent_options(opts):
     useb = bool(opts['branch'])
     
     if (usep or useg or useb) and not (usep ^ useg ^ useb):
-        raise util.Abort(_(
+        raise error.Abort(_(
            "you cannot combine the --parent, --outgoingchanges "
            "and --branch options"))
            
     if useg and not (opts.get('outgoing') or opts.get('outgoingrepo')):
         msg = ("When using the -g/--outgoingchanges flag, you must also use "
             "either the -o or the -O <repo> flag.")
-        raise util.Abort(msg)
+        raise error.Abort(msg)
 
 
 def find_branch_parent(ui, ctx):
@@ -605,7 +605,7 @@ def find_server(ui, opts):
         server = ui.config('reviewboard', 'server')
     if not server:
         msg = 'please specify a reviewboard server in your .hgrc file or using the --server flag'
-        raise util.Abort(_(unicode(msg)))
+        raise error.Abort(_(unicode(msg)))
     return server
 
 def get_repositories(reviewboard):
