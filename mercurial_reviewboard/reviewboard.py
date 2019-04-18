@@ -6,7 +6,11 @@ import getpass
 import mimetools
 import os
 import urllib2
-from . import simplejson
+try: 
+    import json as simplejson
+except ImportError:
+      # python 2.5
+      from . import simplejson
 import mercurial.ui
 import datetime
 from urlparse import urljoin, urlparse
