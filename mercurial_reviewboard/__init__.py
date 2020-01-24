@@ -5,7 +5,8 @@ from hgversion import HgVersion
 import operator
 
 
-from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands, error
+from mercurial import cmdutil, hg, ui, mdiff, patch, util, commands, error, registrar
+from mercurial.utils import dateutil
 from mercurial.i18n import _
 from mercurial.commands import bundle, unbundle
 from mercurial.node import (hex, nullid)
@@ -15,7 +16,7 @@ from reviewboard import make_rbclient, ReviewBoardError
 __version__ = '4.1.0'
 
 cmdtable = {}
-command = cmdutil.command(cmdtable)
+command = registrar.command(cmdtable)
 
 BUNDLE_ATTACHMENT_CAPTION = 'changeset bundle'
 
@@ -276,7 +277,7 @@ def getdiff(ui, repo, r, parent):
     output += "# HG changeset patch\n"
     output += "# User %s\n" % ctx.user()
     output += "# Date %d %d\n" % ctx.date()
-    output += "#      %s\n" % util.datestr(ctx.date())
+    output += "#      %s\n" % dateutil.datestr(ctx.date())
     if branch and branch != 'default':
         output += "# Branch %s\n" % branch
     output += "# Node ID %s\n" % hex(node)
