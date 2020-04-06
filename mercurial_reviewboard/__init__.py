@@ -138,8 +138,9 @@ https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unkn
     find_server(ui, opts)
     
     check_parent_options(opts)
-
-    c = repo[rev]
+    
+    rev_no = repo.revs(rev).first()
+    c = repo[rev_no]
 
     rparent = find_rparent(ui, repo, c, opts)
     ui.debug('remote parent: %s\n' % rparent)
@@ -166,7 +167,8 @@ def find_rparent(ui, repo, c, opts):
     master = opts.get('master')
 
     if master:
-        rparent = repo[master]
+        master_no = repo.revs(master).first()
+        rparent = repo[master_no]
     elif outgoingrepo:
         rparent = remoteparent(ui, repo, opts, c, upstream=outgoingrepo)
     elif outgoing:
