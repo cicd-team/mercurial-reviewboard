@@ -232,6 +232,8 @@ class ReviewFetcher(object):
             except IOError, e: 
                 if hasattr(e, 'code') and e.code == 404:
                     self.ui.status(_("Jira ticket: %s") % str(jira_ticket) + (" does not exist!\n"))
+                else:
+                    self.ui.status(_("Jira error: " + str(e)))
             else:                               
                 self.ui.status(_("Comment added.\n"))
 
@@ -247,7 +249,7 @@ class ReviewFetcher(object):
         self.ui.pushbuffer()
         try:
             commands.update(self.ui, self.repo, heads[0].rev())
-            commands.merge(self.ui, self.repo, tool="internal:merge")
+            commands.merge(self.ui, self.repo, tool="internal:fail")
 
             message = _("Automatic merge after review request %s fetch") % requestid
             commands.commit(self.ui, self.repo, message=message)
