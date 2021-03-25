@@ -9,7 +9,7 @@ setup(
     author_email='dennis.schoen@epublica.de',
     packages=['mercurial_reviewboard'],
     scripts = ['distribute_setup.py'],
-    description="A Mecurial extension which adds a post review command to "
+    description="A Mercurial extension which adds a post review command to "
         "post changesets for review to a Review Board server",
     long_description=open('README').read(),
     install_requires=['Mercurial']

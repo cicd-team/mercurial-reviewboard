@@ -11,16 +11,17 @@ def after_install(options, home_dir):
 def install_package(home_dir, package_name):
     import os
     opts = os.environ.get("INSTALL_OPTS","").split()
-    cmd = [join(home_dir, 'bin', 'easy_install')]
+    cmd = [join(home_dir, 'bin', 'pip')]
     for opt in opts:
         cmd.append(opt)
+    cmd.append("install")
     cmd.append(package_name)
-    print "Running cmd: %s" % cmd.__str__()
+    print("Running cmd: %s" % cmd.__str__())
     subprocess.call(cmd)
 '''
 
 if __name__ == '__main__':
     script = virtualenv.create_bootstrap_script(after_install)
-    file = open('mercurial_reviewboard/tests/virtualenv/bootstrap.py', 'w')
+    file = open('bootstrap.py', 'w')
     file.write(script)
     file.close()

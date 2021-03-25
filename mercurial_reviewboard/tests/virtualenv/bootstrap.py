@@ -1,48 +1,245 @@
 #!/usr/bin/env python
-## WARNING: This file is generated
+# WARNING: This file is generated
 #!/usr/bin/env python
-"""Create a "virtual" Python installation
-"""
+"""Create a "virtual" Python installation"""
 
-virtualenv_version = "1.4.9"
+# fmt: off
+import os  # isort:skip
+import sys  # isort:skip
 
-import sys
-import os
+# If we are running in a new interpreter to create a virtualenv,
+# we do NOT want paths from our existing location interfering with anything,
+# So we remove this file's directory from sys.path - most likely to be
+# the previous interpreter's site-packages. Solves #705, #763, #779
+
+
+if os.environ.get("VIRTUALENV_INTERPRETER_RUNNING"):
+    for path in sys.path[:]:
+        if os.path.realpath(os.path.dirname(__file__)) == os.path.realpath(path):
+            sys.path.remove(path)
+# fmt: on
+
+import ast
+import base64
+import codecs
+import contextlib
+import distutils.spawn
+import distutils.sysconfig
+import errno
+import glob
+import logging
 import optparse
+import os
 import re
 import shutil
-import logging
-import distutils.sysconfig
+import struct
+import subprocess
+import sys
+import tempfile
+import textwrap
+import zipfile
+import zlib
+from distutils.util import strtobool
+from os.path import join
+
 try:
-    import subprocess
-except ImportError, e:
-    if sys.version_info <= (2, 3):
-        print 'ERROR: %s' % e
-        print 'ERROR: this script requires Python 2.4 or greater; or at least the subprocess module.'
-        print 'If you copy subprocess.py from a newer version of Python this script will probably work'
-        sys.exit(101)
-    else:
-        raise
+    import ConfigParser
+except ImportError:
+    # noinspection PyPep8Naming
+    import configparser as ConfigParser
+
+__version__ = "16.7.10"
+virtualenv_version = __version__  # legacy
+DEBUG = os.environ.get("_VIRTUALENV_DEBUG", None) == "1"
+if sys.version_info < (2, 7):
+    print("ERROR: this script requires Python 2.7 or greater.")
+    sys.exit(101)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+IS_ZIPAPP = os.path.isfile(HERE)
+
 try:
-    set
+    # noinspection PyUnresolvedReferences,PyUnboundLocalVariable
+    basestring
 except NameError:
-    from sets import Set as set
+    basestring = str
 
-join = os.path.join
-py_version = 'python%s.%s' % (sys.version_info[0], sys.version_info[1])
-is_jython = sys.platform.startswith('java')
-expected_exe = is_jython and 'jython' or 'python'
+VERSION = "{}.{}".format(*sys.version_info)
+PY_VERSION = "python{}.{}".format(*sys.version_info)
 
-REQUIRED_MODULES = ['os', 'posix', 'posixpath', 'nt', 'ntpath', 'genericpath',
-                    'fnmatch', 'locale', 'encodings', 'codecs',
-                    'stat', 'UserDict', 'readline', 'copy_reg', 'types',
-                    're', 'sre', 'sre_parse', 'sre_constants', 'sre_compile',
-                    'lib-dynload', 'config', 'zlib']
+IS_PYPY = hasattr(sys, "pypy_version_info")
+IS_WIN = sys.platform == "win32"
+IS_CYGWIN = sys.platform == "cygwin"
+IS_DARWIN = sys.platform == "darwin"
+ABI_FLAGS = getattr(sys, "abiflags", "")
 
-if sys.version_info[:2] >= (2, 6):
-    REQUIRED_MODULES.extend(['warnings', 'linecache', '_abcoll', 'abc'])
-if sys.version_info[:2] <= (2, 3):
-    REQUIRED_MODULES.extend(['sets', '__future__'])
+USER_DIR = os.path.expanduser("~")
+if IS_WIN:
+    DEFAULT_STORAGE_DIR = os.path.join(USER_DIR, "virtualenv")
+else:
+    DEFAULT_STORAGE_DIR = os.path.join(USER_DIR, ".virtualenv")
+DEFAULT_CONFIG_FILE = os.path.join(DEFAULT_STORAGE_DIR, "virtualenv.ini")
+
+if IS_PYPY:
+    EXPECTED_EXE = "pypy"
+else:
+    EXPECTED_EXE = "python"
+
+# Return a mapping of version -> Python executable
+# Only provided for Windows, where the information in the registry is used
+if not IS_WIN:
+
+    def get_installed_pythons():
+        return {}
+
+
+else:
+    try:
+        import winreg
+    except ImportError:
+        # noinspection PyUnresolvedReferences
+        import _winreg as winreg
+
+    def get_installed_pythons():
+        final_exes = dict()
+
+        # Grab exes from 32-bit registry view
+        exes = _get_installed_pythons_for_view("-32", winreg.KEY_WOW64_32KEY)
+        # Grab exes from 64-bit registry view
+        exes_64 = _get_installed_pythons_for_view("-64", winreg.KEY_WOW64_64KEY)
+        # Check if exes are unique
+        if set(exes.values()) != set(exes_64.values()):
+            exes.update(exes_64)
+
+        # Create dict with all versions found
+        for version, bitness in sorted(exes):
+            exe = exes[(version, bitness)]
+            # Add minor version (X.Y-32 or X.Y-64)
+            final_exes[version + bitness] = exe
+            # Add minor extensionless version (X.Y); 3.2-64 wins over 3.2-32
+            final_exes[version] = exe
+            # Add major version (X-32 or X-64)
+            final_exes[version[0] + bitness] = exe
+            # Add major extensionless version (X); 3.3-32 wins over 3.2-64
+            final_exes[version[0]] = exe
+
+        return final_exes
+
+    def _get_installed_pythons_for_view(bitness, view):
+        exes = dict()
+        # If both system and current user installations are found for a
+        # particular Python version, the current user one is used
+        for key in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                python_core = winreg.OpenKey(key, "Software\\Python\\PythonCore", 0, view | winreg.KEY_READ)
+            except WindowsError:
+                # No registered Python installations
+                continue
+            i = 0
+            while True:
+                try:
+                    version = winreg.EnumKey(python_core, i)
+                    i += 1
+                    try:
+                        at_path = winreg.QueryValue(python_core, "{}\\InstallPath".format(version))
+                    except WindowsError:
+                        continue
+                    # Remove bitness from version
+                    if version.endswith(bitness):
+                        version = version[: -len(bitness)]
+                    exes[(version, bitness)] = join(at_path, "python.exe")
+                except WindowsError:
+                    break
+            winreg.CloseKey(python_core)
+
+        return exes
+
+
+REQUIRED_MODULES = [
+    "os",
+    "posix",
+    "posixpath",
+    "nt",
+    "ntpath",
+    "genericpath",
+    "fnmatch",
+    "locale",
+    "encodings",
+    "codecs",
+    "stat",
+    "UserDict",
+    "readline",
+    "copy_reg",
+    "types",
+    "re",
+    "sre",
+    "sre_parse",
+    "sre_constants",
+    "sre_compile",
+    "zlib",
+]
+
+REQUIRED_FILES = ["lib-dynload", "config"]
+
+MAJOR, MINOR = sys.version_info[:2]
+if MAJOR == 2:
+    if MINOR >= 6:
+        REQUIRED_MODULES.extend(["warnings", "linecache", "_abcoll", "abc"])
+    if MINOR >= 7:
+        REQUIRED_MODULES.extend(["_weakrefset"])
+elif MAJOR == 3:
+    # Some extra modules are needed for Python 3, but different ones
+    # for different versions.
+    REQUIRED_MODULES.extend(
+        [
+            "_abcoll",
+            "warnings",
+            "linecache",
+            "abc",
+            "io",
+            "_weakrefset",
+            "copyreg",
+            "tempfile",
+            "random",
+            "__future__",
+            "collections",
+            "keyword",
+            "tarfile",
+            "shutil",
+            "struct",
+            "copy",
+            "tokenize",
+            "token",
+            "functools",
+            "heapq",
+            "bisect",
+            "weakref",
+            "reprlib",
+        ]
+    )
+    if MINOR >= 2:
+        REQUIRED_FILES[-1] = "config-{}".format(MAJOR)
+    if MINOR >= 3:
+        import sysconfig
+
+        platform_dir = sysconfig.get_config_var("PLATDIR")
+        REQUIRED_FILES.append(platform_dir)
+        REQUIRED_MODULES.extend(["base64", "_dummy_thread", "hashlib", "hmac", "imp", "importlib", "rlcompleter"])
+    if MINOR >= 4:
+        REQUIRED_MODULES.extend(["operator", "_collections_abc", "_bootlocale"])
+    if MINOR >= 6:
+        REQUIRED_MODULES.extend(["enum"])
+
+if IS_PYPY:
+    # these are needed to correctly display the exceptions that may happen
+    # during the bootstrap
+    REQUIRED_MODULES.extend(["traceback", "linecache"])
+
+    if MAJOR == 3:
+        # _functools is needed to import locale during stdio initialization and
+        # needs to be copied on PyPy because it's not built in
+        REQUIRED_MODULES.append("_functools")
+
 
 class Logger(object):
 
@@ -53,7 +250,7 @@ class Logger(object):
 
     DEBUG = logging.DEBUG
     INFO = logging.INFO
-    NOTIFY = (logging.INFO+logging.WARN)/2
+    NOTIFY = (logging.INFO + logging.WARN) / 2
     WARN = WARNING = logging.WARN
     ERROR = logging.ERROR
     FATAL = logging.FATAL
@@ -68,63 +265,66 @@ class Logger(object):
 
     def debug(self, msg, *args, **kw):
         self.log(self.DEBUG, msg, *args, **kw)
+
     def info(self, msg, *args, **kw):
         self.log(self.INFO, msg, *args, **kw)
+
     def notify(self, msg, *args, **kw):
         self.log(self.NOTIFY, msg, *args, **kw)
+
     def warn(self, msg, *args, **kw):
         self.log(self.WARN, msg, *args, **kw)
+
     def error(self, msg, *args, **kw):
-        self.log(self.WARN, msg, *args, **kw)
+        self.log(self.ERROR, msg, *args, **kw)
+
     def fatal(self, msg, *args, **kw):
         self.log(self.FATAL, msg, *args, **kw)
+
     def log(self, level, msg, *args, **kw):
         if args:
             if kw:
-                raise TypeError(
-                    "You may give positional or keyword arguments, not both")
+                raise TypeError("You may give positional or keyword arguments, not both")
         args = args or kw
         rendered = None
         for consumer_level, consumer in self.consumers:
             if self.level_matches(level, consumer_level):
-                if (self.in_progress_hanging
-                    and consumer in (sys.stdout, sys.stderr)):
+                if self.in_progress_hanging and consumer in (sys.stdout, sys.stderr):
                     self.in_progress_hanging = False
-                    sys.stdout.write('\n')
+                    print("")
                     sys.stdout.flush()
                 if rendered is None:
                     if args:
                         rendered = msg % args
                     else:
                         rendered = msg
-                    rendered = ' '*self.indent + rendered
-                if hasattr(consumer, 'write'):
-                    consumer.write(rendered+'\n')
+                    rendered = " " * self.indent + rendered
+                if hasattr(consumer, "write"):
+                    consumer.write(rendered + "\n")
                 else:
                     consumer(rendered)
 
     def start_progress(self, msg):
-        assert not self.in_progress, (
-            "Tried to start_progress(%r) while in_progress %r"
-            % (msg, self.in_progress))
+        assert not self.in_progress, "Tried to start_progress({!r}) while in_progress {!r}".format(
+            msg, self.in_progress
+        )
         if self.level_matches(self.NOTIFY, self._stdout_level()):
-            sys.stdout.write(msg)
+            print(msg)
             sys.stdout.flush()
             self.in_progress_hanging = True
         else:
             self.in_progress_hanging = False
         self.in_progress = msg
 
-    def end_progress(self, msg='done.'):
-        assert self.in_progress, (
-            "Tried to end_progress without start_progress")
+    def end_progress(self, msg="done."):
+        assert self.in_progress, "Tried to end_progress without start_progress"
         if self.stdout_level_matches(self.NOTIFY):
             if not self.in_progress_hanging:
                 # Some message has been printed out since start_progress
-                sys.stdout.write('...' + self.in_progress + msg + '\n')
+                print("...{}{}".format(self.in_progress, msg))
                 sys.stdout.flush()
             else:
-                sys.stdout.write(msg + '\n')
+                print(msg)
                 sys.stdout.flush()
         self.in_progress = None
         self.in_progress_hanging = False
@@ -133,7 +333,7 @@ class Logger(object):
         """If we are in a progress scope, and no log messages have been
         shown, write out another '.'"""
         if self.in_progress_hanging:
-            sys.stdout.write('.')
+            print(".")
             sys.stdout.flush()
 
     def stdout_level_matches(self, level):
@@ -147,9 +347,10 @@ class Logger(object):
                 return level
         return self.FATAL
 
-    def level_matches(self, level, consumer_level):
+    @staticmethod
+    def level_matches(level, consumer_level):
         """
-        >>> l = Logger()
+        >>> l = Logger([])
         >>> l.level_matches(3, 4)
         False
         >>> l.level_matches(3, 2)
@@ -167,13 +368,13 @@ class Logger(object):
             start, stop = level.start, level.stop
             if start is not None and start > consumer_level:
                 return False
-            if stop is not None or stop <= consumer_level:
+            if stop is not None and stop <= consumer_level:
                 return False
             return True
         else:
             return level >= consumer_level
 
-    #@classmethod
+    @classmethod
     def level_for_integer(cls, level):
         levels = cls.LEVELS
         if level < 0:
@@ -182,855 +383,1661 @@ class Logger(object):
             return levels[-1]
         return levels[level]
 
-    level_for_integer = classmethod(level_for_integer)
 
-def mkdir(path):
-    if not os.path.exists(path):
-        logger.info('Creating %s', path)
-        os.makedirs(path)
+# create a silent logger just to prevent this from being undefined
+# will be overridden with requested verbosity main() is called.
+logger = Logger([(Logger.LEVELS[-1], sys.stdout)])
+
+
+def mkdir(at_path):
+    if not os.path.exists(at_path):
+        logger.info("Creating %s", at_path)
+        os.makedirs(at_path)
     else:
-        logger.info('Directory %s already exists', path)
+        logger.info("Directory %s already exists", at_path)
+
+
+def copy_file_or_folder(src, dest, symlink=True):
+    if os.path.isdir(src):
+        shutil.copytree(src, dest, symlink)
+    else:
+        shutil.copy2(src, dest)
+
 
 def copyfile(src, dest, symlink=True):
     if not os.path.exists(src):
         # Some bad symlink in the src
-        logger.warn('Cannot find file %s (bad symlink)', src)
+        logger.warn("Cannot find file %s (bad symlink)", src)
         return
     if os.path.exists(dest):
-        logger.debug('File %s already exists', dest)
+        logger.debug("File %s already exists", dest)
         return
     if not os.path.exists(os.path.dirname(dest)):
-        logger.info('Creating parent directories for %s' % os.path.dirname(dest))
+        logger.info("Creating parent directories for %s", os.path.dirname(dest))
         os.makedirs(os.path.dirname(dest))
-    if symlink and hasattr(os, 'symlink'):
-        logger.info('Symlinking %s', dest)
-        os.symlink(os.path.abspath(src), dest)
+    if symlink and hasattr(os, "symlink") and not IS_WIN:
+        logger.info("Symlinking %s", dest)
+        try:
+            os.symlink(os.path.realpath(src), dest)
+        except (OSError, NotImplementedError):
+            logger.info("Symlinking failed, copying to %s", dest)
+            copy_file_or_folder(src, dest, symlink)
     else:
-        logger.info('Copying to %s', dest)
-        if os.path.isdir(src):
-            shutil.copytree(src, dest, True)
-        else:
-            shutil.copy2(src, dest)
+        logger.info("Copying to %s", dest)
+        copy_file_or_folder(src, dest, symlink)
+
 
 def writefile(dest, content, overwrite=True):
     if not os.path.exists(dest):
-        logger.info('Writing %s', dest)
-        f = open(dest, 'wb')
-        f.write(content)
-        f.close()
+        logger.info("Writing %s", dest)
+        with open(dest, "wb") as f:
+            f.write(content.encode("utf-8"))
         return
     else:
-        f = open(dest, 'rb')
-        c = f.read()
-        f.close()
-        if c != content:
+        with open(dest, "rb") as f:
+            c = f.read()
+        if c != content.encode("utf-8"):
             if not overwrite:
-                logger.notify('File %s exists with different content; not overwriting', dest)
+                logger.notify("File %s exists with different content; not overwriting", dest)
                 return
-            logger.notify('Overwriting %s with new content', dest)
-            f = open(dest, 'wb')
-            f.write(content)
-            f.close()
+            logger.notify("Overwriting %s with new content", dest)
+            with open(dest, "wb") as f:
+                f.write(content.encode("utf-8"))
         else:
-            logger.info('Content %s already in place', dest)
+            logger.info("Content %s already in place", dest)
 
-def rmtree(dir):
-    if os.path.exists(dir):
-        logger.notify('Deleting tree %s', dir)
-        shutil.rmtree(dir)
+
+def rm_tree(folder):
+    if os.path.exists(folder):
+        logger.notify("Deleting tree %s", folder)
+        shutil.rmtree(folder)
     else:
-        logger.info('Do not need to delete %s; already gone', dir)
+        logger.info("Do not need to delete %s; already gone", folder)
+
 
 def make_exe(fn):
-    if hasattr(os, 'chmod'):
-        oldmode = os.stat(fn).st_mode & 07777
-        newmode = (oldmode | 0555) & 07777
-        os.chmod(fn, newmode)
-        logger.info('Changed mode of %s to %s', fn, oct(newmode))
+    if hasattr(os, "chmod"):
+        old_mode = os.stat(fn).st_mode & 0xFFF  # 0o7777
+        new_mode = (old_mode | 0x16D) & 0xFFF  # 0o555, 0o7777
+        os.chmod(fn, new_mode)
+        logger.info("Changed mode of %s to %s", fn, oct(new_mode))
 
-def _find_file(filename, dirs):
-    for dir in dirs:
-        if os.path.exists(join(dir, filename)):
-            return join(dir, filename)
-    return filename
 
-def _install_req(py_executable, unzip=False, distribute=False):
-    if not distribute:
-        setup_fn = 'setuptools-0.6c11-py%s.egg' % sys.version[:3]
-        project_name = 'setuptools'
-        bootstrap_script = EZ_SETUP_PY
-        source = None
-    else:
-        setup_fn = None
-        source = 'distribute-0.6.8.tar.gz'
-        project_name = 'distribute'
-        bootstrap_script = DISTRIBUTE_SETUP_PY
+def _find_file(filename, folders):
+    for folder in reversed(folders):
+        files = glob.glob(os.path.join(folder, filename))
+        if files and os.path.isfile(files[0]):
+            return True, files[0]
+    return False, filename
+
+
+@contextlib.contextmanager
+def virtualenv_support_dirs():
+    """Context manager yielding either [virtualenv_support_dir] or []"""
+
+    # normal filesystem installation
+    if os.path.isdir(join(HERE, "virtualenv_support")):
+        yield [join(HERE, "virtualenv_support")]
+    elif IS_ZIPAPP:
+        tmpdir = tempfile.mkdtemp()
         try:
-            # check if the global Python has distribute installed or plain
-            # setuptools
-            import pkg_resources
-            if not hasattr(pkg_resources, '_distribute'):
-                location = os.path.dirname(pkg_resources.__file__)
-                logger.notify("A globally installed setuptools was found (in %s)" % location)
-                logger.notify("Use the --no-site-packages option to use distribute in "
-                              "the virtualenv.")
-        except ImportError:
-            pass
-
-    search_dirs = file_search_dirs()
-
-    if setup_fn is not None:
-        setup_fn = _find_file(setup_fn, search_dirs)
-
-    if source is not None:
-        source = _find_file(source, search_dirs)
-
-    if is_jython and os._name == 'nt':
-        # Jython's .bat sys.executable can't handle a command line
-        # argument with newlines
-        import tempfile
-        fd, ez_setup = tempfile.mkstemp('.py')
-        os.write(fd, bootstrap_script)
-        os.close(fd)
-        cmd = [py_executable, ez_setup]
-    else:
-        cmd = [py_executable, '-c', bootstrap_script]
-    if unzip:
-        cmd.append('--always-unzip')
-    env = {}
-    if logger.stdout_level_matches(logger.DEBUG):
-        cmd.append('-v')
-
-    old_chdir = os.getcwd()
-    if setup_fn is not None and os.path.exists(setup_fn):
-        logger.info('Using existing %s egg: %s' % (project_name, setup_fn))
-        cmd.append(setup_fn)
-        if os.environ.get('PYTHONPATH'):
-            env['PYTHONPATH'] = setup_fn + os.path.pathsep + os.environ['PYTHONPATH']
-        else:
-            env['PYTHONPATH'] = setup_fn
-    else:
-        # the source is found, let's chdir
-        if source is not None and os.path.exists(source):
-            os.chdir(os.path.dirname(source))
-        else:
-            logger.info('No %s egg found; downloading' % project_name)
-        cmd.extend(['--always-copy', '-U', project_name])
-    logger.start_progress('Installing %s...' % project_name)
-    logger.indent += 2
-    cwd = None
-    if project_name == 'distribute':
-        env['DONT_PATCH_SETUPTOOLS'] = 'true'
-
-    def _filter_ez_setup(line):
-        return filter_ez_setup(line, project_name)
-
-    if not os.access(os.getcwd(), os.W_OK):
-        cwd = '/tmp'
-        if source is not None and os.path.exists(source):
-            # the current working dir is hostile, let's copy the
-            # tarball to /tmp
-            target = os.path.join(cwd, os.path.split(source)[-1])
-            shutil.copy(source, target)
-    try:
-        call_subprocess(cmd, show_stdout=False,
-                        filter_stdout=_filter_ez_setup,
-                        extra_env=env,
-                        cwd=cwd)
-    finally:
-        logger.indent -= 2
-        logger.end_progress()
-        if os.getcwd() != old_chdir:
-            os.chdir(old_chdir)
-        if is_jython and os._name == 'nt':
-            os.remove(ez_setup)
-
-def file_search_dirs():
-    here = os.path.dirname(os.path.abspath(__file__))
-    dirs = ['.', here,
-            join(here, 'virtualenv_support')]
-    if os.path.splitext(os.path.dirname(__file__))[0] != 'virtualenv':
-        # Probably some boot script; just in case virtualenv is installed...
+            with zipfile.ZipFile(HERE) as zipf:
+                for member in zipf.namelist():
+                    if os.path.dirname(member) == "virtualenv_support":
+                        zipf.extract(member, tmpdir)
+            yield [join(tmpdir, "virtualenv_support")]
+        finally:
+            shutil.rmtree(tmpdir)
+    # probably a bootstrap script
+    elif os.path.splitext(os.path.dirname(__file__))[0] != "virtualenv":
         try:
+            # noinspection PyUnresolvedReferences
             import virtualenv
         except ImportError:
-            pass
+            yield []
         else:
-            dirs.append(os.path.join(os.path.dirname(virtualenv.__file__), 'virtualenv_support'))
-    return [d for d in dirs if os.path.isdir(d)]
-
-def install_setuptools(py_executable, unzip=False):
-    _install_req(py_executable, unzip)
-
-def install_distribute(py_executable, unzip=False):
-    _install_req(py_executable, unzip, distribute=True)
-
-_pip_re = re.compile(r'^pip-.*(zip|tar.gz|tar.bz2|tgz|tbz)$', re.I)
-def install_pip(py_executable):
-    filenames = []
-    for dir in file_search_dirs():
-        filenames.extend([join(dir, fn) for fn in os.listdir(dir)
-                          if _pip_re.search(fn)])
-    filenames.sort(key=lambda x: os.path.basename(x).lower())
-    if not filenames:
-        filename = 'pip'
+            yield [join(os.path.dirname(virtualenv.__file__), "virtualenv_support")]
+    # we tried!
     else:
-        filename = filenames[-1]
-    easy_install_script = 'easy_install'
-    if sys.platform == 'win32':
-        easy_install_script = 'easy_install-script.py'
-    cmd = [py_executable, join(os.path.dirname(py_executable), easy_install_script), filename]
-    if filename == 'pip':
-        logger.info('Installing pip from network...')
-    else:
-        logger.info('Installing %s' % os.path.basename(filename))
-    logger.indent += 2
-    def _filter_setup(line):
-        return filter_ez_setup(line, 'pip')
-    try:
-        call_subprocess(cmd, show_stdout=False,
-                        filter_stdout=_filter_setup)
-    finally:
-        logger.indent -= 2
+        yield []
 
-def filter_ez_setup(line, project_name='setuptools'):
-    if not line.strip():
-        return Logger.DEBUG
-    if project_name == 'distribute':
-        for prefix in ('Extracting', 'Now working', 'Installing', 'Before',
-                       'Scanning', 'Setuptools', 'Egg', 'Already',
-                       'running', 'writing', 'reading', 'installing',
-                       'creating', 'copying', 'byte-compiling', 'removing',
-                       'Processing'):
-            if line.startswith(prefix):
-                return Logger.DEBUG
-        return Logger.DEBUG
-    for prefix in ['Reading ', 'Best match', 'Processing setuptools',
-                   'Copying setuptools', 'Adding setuptools',
-                   'Installing ', 'Installed ']:
-        if line.startswith(prefix):
-            return Logger.DEBUG
-    return Logger.INFO
+
+class UpdatingDefaultsHelpFormatter(optparse.IndentedHelpFormatter):
+    """
+    Custom help formatter for use in ConfigOptionParser that updates
+    the defaults before expanding them, allowing them to show up correctly
+    in the help listing
+    """
+
+    def expand_default(self, option):
+        if self.parser is not None:
+            self.parser.update_defaults(self.parser.defaults)
+        return optparse.IndentedHelpFormatter.expand_default(self, option)
+
+
+class ConfigOptionParser(optparse.OptionParser):
+    """
+    Custom option parser which updates its defaults by checking the
+    configuration files and environmental variables
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.config = ConfigParser.RawConfigParser()
+        self.files = self.get_config_files()
+        self.config.read(self.files)
+        optparse.OptionParser.__init__(self, *args, **kwargs)
+
+    @staticmethod
+    def get_config_files():
+        config_file = os.environ.get("VIRTUALENV_CONFIG_FILE", False)
+        if config_file and os.path.exists(config_file):
+            return [config_file]
+        return [DEFAULT_CONFIG_FILE]
+
+    def update_defaults(self, defaults):
+        """
+        Updates the given defaults with values from the config files and
+        the environ. Does a little special handling for certain types of
+        options (lists).
+        """
+        # Then go and look for the other sources of configuration:
+        config = {}
+        # 1. config files
+        config.update(dict(self.get_config_section("virtualenv")))
+        # 2. environmental variables
+        config.update(dict(self.get_environ_vars()))
+        # Then set the options with those values
+        for key, val in config.items():
+            key = key.replace("_", "-")
+            if not key.startswith("--"):
+                key = "--{}".format(key)  # only prefer long opts
+            option = self.get_option(key)
+            if option is not None:
+                # ignore empty values
+                if not val:
+                    continue
+                # handle multiline configs
+                if option.action == "append":
+                    val = val.split()
+                else:
+                    option.nargs = 1
+                if option.action == "store_false":
+                    val = not strtobool(val)
+                elif option.action in ("store_true", "count"):
+                    val = strtobool(val)
+                try:
+                    val = option.convert_value(key, val)
+                except optparse.OptionValueError:
+                    e = sys.exc_info()[1]
+                    print("An error occurred during configuration: {!r}".format(e))
+                    sys.exit(3)
+                defaults[option.dest] = val
+        return defaults
+
+    def get_config_section(self, name):
+        """
+        Get a section of a configuration
+        """
+        if self.config.has_section(name):
+            return self.config.items(name)
+        return []
+
+    def get_environ_vars(self, prefix="VIRTUALENV_"):
+        """
+        Returns a generator with all environmental vars with prefix VIRTUALENV
+        """
+        for key, val in os.environ.items():
+            if key.startswith(prefix):
+                yield (key.replace(prefix, "").lower(), val)
+
+    def get_default_values(self):
+        """
+        Overriding to make updating the defaults after instantiation of
+        the option parser possible, update_defaults() does the dirty work.
+        """
+        if not self.process_default_values:
+            # Old, pre-Optik 1.5 behaviour.
+            return optparse.Values(self.defaults)
+
+        defaults = self.update_defaults(self.defaults.copy())  # ours
+        for option in self._get_all_options():
+            default = defaults.get(option.dest)
+            if isinstance(default, basestring):
+                opt_str = option.get_opt_string()
+                defaults[option.dest] = option.check_value(opt_str, default)
+        return optparse.Values(defaults)
+
 
 def main():
-    parser = optparse.OptionParser(
-        version=virtualenv_version,
-        usage="%prog [OPTIONS] DEST_DIR")
+    parser = ConfigOptionParser(
+        version=virtualenv_version, usage="%prog [OPTIONS] DEST_DIR", formatter=UpdatingDefaultsHelpFormatter()
+    )
 
     parser.add_option(
-        '-v', '--verbose',
-        action='count',
-        dest='verbose',
-        default=0,
-        help="Increase verbosity")
+        "-v", "--verbose", action="count", dest="verbose", default=5 if DEBUG else 0, help="Increase verbosity."
+    )
+
+    parser.add_option("-q", "--quiet", action="count", dest="quiet", default=0, help="Decrease verbosity.")
 
     parser.add_option(
-        '-q', '--quiet',
-        action='count',
-        dest='quiet',
-        default=0,
-        help='Decrease verbosity')
+        "-p",
+        "--python",
+        dest="python",
+        metavar="PYTHON_EXE",
+        help="The Python interpreter to use, e.g., --python=python3.5 will use the python3.5 "
+        "interpreter to create the new environment.  The default is the interpreter that "
+        "virtualenv was installed with ({})".format(sys.executable),
+    )
 
     parser.add_option(
-        '-p', '--python',
-        dest='python',
-        metavar='PYTHON_EXE',
-        help='The Python interpreter to use, e.g., --python=python2.5 will use the python2.5 '
-        'interpreter to create the new environment.  The default is the interpreter that '
-        'virtualenv was installed with (%s)' % sys.executable)
+        "--clear", dest="clear", action="store_true", help="Clear out the non-root install and start from scratch."
+    )
+
+    parser.set_defaults(system_site_packages=False)
+    parser.add_option(
+        "--no-site-packages",
+        dest="system_site_packages",
+        action="store_false",
+        help="DEPRECATED. Retained only for backward compatibility. "
+        "Not having access to global site-packages is now the default behavior.",
+    )
 
     parser.add_option(
-        '--clear',
-        dest='clear',
-        action='store_true',
-        help="Clear out the non-root install and start from scratch")
+        "--system-site-packages",
+        dest="system_site_packages",
+        action="store_true",
+        help="Give the virtual environment access to the global site-packages.",
+    )
 
     parser.add_option(
-        '--no-site-packages',
-        dest='no_site_packages',
-        action='store_true',
-        help="Don't give access to the global site-packages dir to the "
-             "virtual environment")
+        "--always-copy",
+        dest="symlink",
+        action="store_false",
+        default=True,
+        help="Always copy files rather than symlinking.",
+    )
 
     parser.add_option(
-        '--unzip-setuptools',
-        dest='unzip_setuptools',
-        action='store_true',
-        help="Unzip Setuptools or Distribute when installing it")
+        "--relocatable",
+        dest="relocatable",
+        action="store_true",
+        help="Make an EXISTING virtualenv environment relocatable. "
+        "This fixes up scripts and makes all .pth files relative.",
+    )
 
     parser.add_option(
-        '--relocatable',
-        dest='relocatable',
-        action='store_true',
-        help='Make an EXISTING virtualenv environment relocatable.  '
-        'This fixes up scripts and makes all .pth files relative')
+        "--no-setuptools",
+        dest="no_setuptools",
+        action="store_true",
+        help="Do not install setuptools in the new virtualenv.",
+    )
+
+    parser.add_option("--no-pip", dest="no_pip", action="store_true", help="Do not install pip in the new virtualenv.")
 
     parser.add_option(
-        '--distribute',
-        dest='use_distribute',
-        action='store_true',
-        help='Use Distribute instead of Setuptools. Set environ variable'
-        'VIRTUALENV_USE_DISTRIBUTE to make it the default ')
+        "--no-wheel", dest="no_wheel", action="store_true", help="Do not install wheel in the new virtualenv."
+    )
 
-    if 'extend_parser' in globals():
-        extend_parser(parser)
+    parser.add_option(
+        "--extra-search-dir",
+        dest="search_dirs",
+        action="append",
+        metavar="DIR",
+        default=[],
+        help="Directory to look for setuptools/pip distributions in. " "This option can be used multiple times.",
+    )
+
+    parser.add_option(
+        "--download",
+        dest="download",
+        default=True,
+        action="store_true",
+        help="Download pre-installed packages from PyPI.",
+    )
+
+    parser.add_option(
+        "--no-download",
+        "--never-download",
+        dest="download",
+        action="store_false",
+        help="Do not download pre-installed packages from PyPI.",
+    )
+
+    parser.add_option("--prompt", dest="prompt", help="Provides an alternative prompt prefix for this environment.")
+
+    parser.add_option(
+        "--setuptools",
+        dest="setuptools",
+        action="store_true",
+        help="DEPRECATED. Retained only for backward compatibility. This option has no effect.",
+    )
+
+    parser.add_option(
+        "--distribute",
+        dest="distribute",
+        action="store_true",
+        help="DEPRECATED. Retained only for backward compatibility. This option has no effect.",
+    )
+
+    parser.add_option(
+        "--unzip-setuptools",
+        action="store_true",
+        help="DEPRECATED.  Retained only for backward compatibility. This option has no effect.",
+    )
+
+    if "extend_parser" in globals():
+        # noinspection PyUnresolvedReferences
+        extend_parser(parser)  # noqa: F821
 
     options, args = parser.parse_args()
 
     global logger
 
-    if 'adjust_options' in globals():
-        adjust_options(options, args)
+    if "adjust_options" in globals():
+        # noinspection PyUnresolvedReferences
+        adjust_options(options, args)  # noqa: F821
 
     verbosity = options.verbose - options.quiet
-    logger = Logger([(Logger.level_for_integer(2-verbosity), sys.stdout)])
+    logger = Logger([(Logger.level_for_integer(2 - verbosity), sys.stdout)])
 
-    if options.python and not os.environ.get('VIRTUALENV_INTERPRETER_RUNNING'):
+    def should_reinvoke(options):
+        """Do we need to reinvoke ourself?"""
+        # Did the user specify the --python option?
+        if options.python and not os.environ.get("VIRTUALENV_INTERPRETER_RUNNING"):
+            interpreter = resolve_interpreter(options.python)
+            if interpreter != sys.executable:
+                # The user specified a different interpreter, so we have to reinvoke.
+                return interpreter
+
+        # At this point, we know the user wants to use sys.executable to create the
+        # virtual environment. But on Windows, sys.executable may be a venv redirector,
+        # in which case we still need to locate the underlying actual interpreter, and
+        # reinvoke using that.
+        if IS_WIN:
+            # OK. Now things get really fun...
+            #
+            # If we are running from a venv, with a redirector, then what happens is as
+            # follows:
+            #
+            #   1. The redirector sets __PYVENV_LAUNCHER__ in the environment to point
+            #      to the redirector executable.
+            #   2. The redirector launches the "base" Python (from the home value in
+            #      pyvenv.cfg).
+            #   3. The base Python executable sees __PYVENV_LAUNCHER__ in the environment
+            #      and sets sys.executable to that value.
+            #   4. If site.py gets run, it sees __PYVENV_LAUNCHER__, and sets
+            #      sys._base_executable to _winapi.GetModuleFileName(0) and removes
+            #      __PYVENV_LAUNCHER__.
+            #
+            # Unfortunately, that final step (site.py) may not happen. There are 2 key
+            # times when that is the case:
+            #
+            #   1. Python 3.7.2, which had the redirector but not the site.py code.
+            #   2. Running a venv from a virtualenv, which uses virtualenv's custom
+            #      site.py.
+            #
+            # So, we check for sys._base_executable, but if it's not present and yet we
+            # have __PYVENV_LAUNCHER__, we do what site.py would have done and get our
+            # interpreter from GetModuleFileName(0). We also remove __PYVENV_LAUNCHER__
+            # from the environment, to avoid loops (actually, mainly because site.py
+            # does so, and my head hurts enough buy now that I just want to be safe!)
+
+            # In Python 3.7.4, the rules changed so that sys._base_executable is always
+            # set. So we now only return sys._base_executable if it's set *and does not
+            # match sys.executable* (we still have to check that it's set, as we need to
+            # support Python 3.7.3 and earlier).
+
+            # Phew.
+
+            if getattr(sys, "_base_executable", sys.executable) != sys.executable:
+                return sys._base_executable
+
+            if "__PYVENV_LAUNCHER__" in os.environ:
+                import _winapi
+
+                del os.environ["__PYVENV_LAUNCHER__"]
+                return _winapi.GetModuleFileName(0)
+
+        # We don't need to reinvoke
+        return None
+
+    interpreter = should_reinvoke(options)
+    if interpreter is None:
+        # We don't need to reinvoke - if the user asked us to, tell them why we
+        # aren't.
+        if options.python:
+            logger.warn("Already using interpreter {}".format(sys.executable))
+    else:
         env = os.environ.copy()
-        interpreter = resolve_interpreter(options.python)
-        if interpreter == sys.executable:
-            logger.warn('Already using interpreter %s' % interpreter)
-        else:
-            logger.notify('Running virtualenv with interpreter %s' % interpreter)
-            env['VIRTUALENV_INTERPRETER_RUNNING'] = 'true'
-            file = __file__
-            if file.endswith('.pyc'):
-                file = file[:-1]
-            os.execvpe(interpreter, [interpreter, file] + sys.argv[1:], env)
+        logger.notify("Running virtualenv with interpreter {}".format(interpreter))
+        env["VIRTUALENV_INTERPRETER_RUNNING"] = "true"
+        # Remove the variable __PYVENV_LAUNCHER__ if it's present, as it causes the
+        # interpreter to redirect back to the virtual environment.
+        if "__PYVENV_LAUNCHER__" in env:
+            del env["__PYVENV_LAUNCHER__"]
+        file = __file__
+        if file.endswith(".pyc"):
+            file = file[:-1]
+        elif IS_ZIPAPP:
+            file = HERE
+        sub_process_call = subprocess.Popen([interpreter, file] + sys.argv[1:], env=env)
+        raise SystemExit(sub_process_call.wait())
 
     if not args:
-        print 'You must provide a DEST_DIR'
+        print("You must provide a DEST_DIR")
         parser.print_help()
         sys.exit(2)
     if len(args) > 1:
-        print 'There must be only one argument: DEST_DIR (you gave %s)' % (
-            ' '.join(args))
+        print("There must be only one argument: DEST_DIR (you gave {})".format(" ".join(args)))
         parser.print_help()
         sys.exit(2)
 
     home_dir = args[0]
 
-    if os.environ.get('WORKING_ENV'):
-        logger.fatal('ERROR: you cannot run virtualenv while in a workingenv')
-        logger.fatal('Please deactivate your workingenv, then re-run this script')
+    if os.path.exists(home_dir) and os.path.isfile(home_dir):
+        logger.fatal("ERROR: File already exists and is not a directory.")
+        logger.fatal("Please provide a different path or delete the file.")
         sys.exit(3)
 
-    if 'PYTHONHOME' in os.environ:
-        logger.warn('PYTHONHOME is set.  You *must* activate the virtualenv before using it')
-        del os.environ['PYTHONHOME']
+    if os.pathsep in home_dir:
+        logger.fatal("ERROR: target path contains the operating system path separator '{}'".format(os.pathsep))
+        logger.fatal("This is not allowed as would make the activation scripts unusable.".format(os.pathsep))
+        sys.exit(3)
+
+    if os.environ.get("WORKING_ENV"):
+        logger.fatal("ERROR: you cannot run virtualenv while in a working env")
+        logger.fatal("Please deactivate your working env, then re-run this script")
+        sys.exit(3)
+
+    if "PYTHONHOME" in os.environ:
+        logger.warn("PYTHONHOME is set.  You *must* activate the virtualenv before using it")
+        del os.environ["PYTHONHOME"]
 
     if options.relocatable:
         make_environment_relocatable(home_dir)
         return
 
-    create_environment(home_dir, site_packages=not options.no_site_packages, clear=options.clear,
-                       unzip_setuptools=options.unzip_setuptools,
-                       use_distribute=options.use_distribute)
-    if 'after_install' in globals():
-        after_install(options, home_dir)
+    with virtualenv_support_dirs() as search_dirs:
+        create_environment(
+            home_dir,
+            site_packages=options.system_site_packages,
+            clear=options.clear,
+            prompt=options.prompt,
+            search_dirs=search_dirs + options.search_dirs,
+            download=options.download,
+            no_setuptools=options.no_setuptools,
+            no_pip=options.no_pip,
+            no_wheel=options.no_wheel,
+            symlink=options.symlink,
+        )
+    if "after_install" in globals():
+        # noinspection PyUnresolvedReferences
+        after_install(options, home_dir)  # noqa: F821
 
-def call_subprocess(cmd, show_stdout=True,
-                    filter_stdout=None, cwd=None,
-                    raise_on_returncode=True, extra_env=None):
+
+def call_subprocess(
+    cmd,
+    show_stdout=True,
+    filter_stdout=None,
+    cwd=None,
+    raise_on_return_code=True,
+    extra_env=None,
+    remove_from_env=None,
+    stdin=None,
+):
     cmd_parts = []
     for part in cmd:
-        if len(part) > 40:
-            part = part[:30]+"..."+part[-5:]
-        if ' ' in part or '\n' in part or '"' in part or "'" in part:
-            part = '"%s"' % part.replace('"', '\\"')
+        if len(part) > 45:
+            part = part[:20] + "..." + part[-20:]
+        if " " in part or "\n" in part or '"' in part or "'" in part:
+            part = '"{}"'.format(part.replace('"', '\\"'))
+        if hasattr(part, "decode"):
+            try:
+                part = part.decode(sys.getdefaultencoding())
+            except UnicodeDecodeError:
+                part = part.decode(sys.getfilesystemencoding())
         cmd_parts.append(part)
-    cmd_desc = ' '.join(cmd_parts)
+    cmd_desc = " ".join(cmd_parts)
     if show_stdout:
         stdout = None
     else:
         stdout = subprocess.PIPE
-    logger.debug("Running command %s" % cmd_desc)
-    if extra_env:
+    logger.debug("Running command {}".format(cmd_desc))
+    if extra_env or remove_from_env:
         env = os.environ.copy()
-        env.update(extra_env)
+        if extra_env:
+            env.update(extra_env)
+        if remove_from_env:
+            for var_name in remove_from_env:
+                env.pop(var_name, None)
     else:
         env = None
     try:
         proc = subprocess.Popen(
-            cmd, stderr=subprocess.STDOUT, stdin=None, stdout=stdout,
-            cwd=cwd, env=env)
-    except Exception, e:
-        logger.fatal(
-            "Error %s while executing command %s" % (e, cmd_desc))
+            cmd,
+            stderr=subprocess.STDOUT,
+            stdin=None if stdin is None else subprocess.PIPE,
+            stdout=stdout,
+            cwd=cwd,
+            env=env,
+        )
+    except Exception:
+        e = sys.exc_info()[1]
+        logger.fatal("Error {} while executing command {}".format(e, cmd_desc))
         raise
     all_output = []
     if stdout is not None:
-        stdout = proc.stdout
-        while 1:
-            line = stdout.readline()
-            if not line:
-                break
-            line = line.rstrip()
-            all_output.append(line)
-            if filter_stdout:
-                level = filter_stdout(line)
-                if isinstance(level, tuple):
-                    level, line = level
-                logger.log(level, line)
-                if not logger.stdout_level_matches(level):
-                    logger.show_progress()
-            else:
-                logger.info(line)
+        if stdin is not None:
+            with proc.stdin:
+                proc.stdin.write(stdin)
+
+        encoding = sys.getdefaultencoding()
+        fs_encoding = sys.getfilesystemencoding()
+        with proc.stdout as stdout:
+            while 1:
+                line = stdout.readline()
+                try:
+                    line = line.decode(encoding)
+                except UnicodeDecodeError:
+                    line = line.decode(fs_encoding)
+                if not line:
+                    break
+                line = line.rstrip()
+                all_output.append(line)
+                if filter_stdout:
+                    level = filter_stdout(line)
+                    if isinstance(level, tuple):
+                        level, line = level
+                    logger.log(level, line)
+                    if not logger.stdout_level_matches(level):
+                        logger.show_progress()
+                else:
+                    logger.info(line)
     else:
-        proc.communicate()
+        proc.communicate(stdin)
     proc.wait()
     if proc.returncode:
-        if raise_on_returncode:
+        if raise_on_return_code:
             if all_output:
-                logger.notify('Complete output from command %s:' % cmd_desc)
-                logger.notify('\n'.join(all_output) + '\n----------------------------------------')
-            raise OSError(
-                "Command %s failed with error code %s"
-                % (cmd_desc, proc.returncode))
+                logger.notify("Complete output from command {}:".format(cmd_desc))
+                logger.notify("\n".join(all_output) + "\n----------------------------------------")
+            raise OSError("Command {} failed with error code {}".format(cmd_desc, proc.returncode))
         else:
-            logger.warn(
-                "Command %s had error code %s"
-                % (cmd_desc, proc.returncode))
+            logger.warn("Command {} had error code {}".format(cmd_desc, proc.returncode))
+    return all_output
 
 
-def create_environment(home_dir, site_packages=True, clear=False,
-                       unzip_setuptools=False, use_distribute=False):
+def filter_install_output(line):
+    if line.strip().startswith("running"):
+        return Logger.INFO
+    return Logger.DEBUG
+
+
+def find_wheels(projects, search_dirs):
+    """Find wheels from which we can import PROJECTS.
+
+    Scan through SEARCH_DIRS for a wheel for each PROJECT in turn. Return
+    a list of the first wheel found for each PROJECT
+    """
+
+    wheels = []
+
+    # Look through SEARCH_DIRS for the first suitable wheel. Don't bother
+    # about version checking here, as this is simply to get something we can
+    # then use to install the correct version.
+    for project in projects:
+        for dirname in search_dirs:
+            # This relies on only having "universal" wheels available.
+            # The pattern could be tightened to require -py2.py3-none-any.whl.
+            files = glob.glob(os.path.join(dirname, "{}-*.whl".format(project)))
+            if files:
+                versions = list(
+                    reversed(
+                        sorted(
+                            [(tuple(int(i) for i in os.path.basename(f).split("-")[1].split(".")), f) for f in files]
+                        )
+                    )
+                )
+                if project == "pip" and sys.version_info[0:2] == (3, 4):
+                    wheel = next(p for v, p in versions if v <= (19, 1, 1))
+                else:
+                    wheel = versions[0][1]
+                wheels.append(wheel)
+                break
+        else:
+            # We're out of luck, so quit with a suitable error
+            logger.fatal("Cannot find a wheel for {}".format(project))
+
+    return wheels
+
+
+def install_wheel(project_names, py_executable, search_dirs=None, download=False):
+    if search_dirs is None:
+        search_dirs_context = virtualenv_support_dirs
+    else:
+
+        @contextlib.contextmanager
+        def search_dirs_context():
+            yield search_dirs
+
+    with search_dirs_context() as search_dirs:
+        _install_wheel_with_search_dir(download, project_names, py_executable, search_dirs)
+
+
+def _install_wheel_with_search_dir(download, project_names, py_executable, search_dirs):
+    wheels = find_wheels(["setuptools", "pip"], search_dirs)
+    python_path = os.pathsep.join(wheels)
+
+    # PIP_FIND_LINKS uses space as the path separator and thus cannot have paths
+    # with spaces in them. Convert any of those to local file:// URL form.
+    try:
+        from urlparse import urljoin
+        from urllib import pathname2url
+    except ImportError:
+        from urllib.parse import urljoin
+        from urllib.request import pathname2url
+
+    def space_path2url(p):
+        if " " not in p:
+            return p
+        return urljoin("file:", pathname2url(os.path.abspath(p)))
+
+    find_links = " ".join(space_path2url(d) for d in search_dirs)
+
+    extra_args = ["--ignore-installed", "-v"]
+    if DEBUG:
+        extra_args.append("-v")
+
+    config = _pip_config(py_executable, python_path)
+    defined_cert = bool(config.get("install.cert") or config.get(":env:.cert") or config.get("global.cert"))
+
+    script = textwrap.dedent(
+        """
+        import sys
+        import pkgutil
+        import tempfile
+        import os
+
+        defined_cert = {defined_cert}
+
+        try:
+            from pip._internal import main as _main
+            if type(_main) is type(sys):  # <type 'module'>
+                _main = _main.main  # nested starting in Pip 19.3
+            cert_data = pkgutil.get_data("pip._vendor.certifi", "cacert.pem")
+        except ImportError:
+            from pip import main as _main
+            cert_data = pkgutil.get_data("pip._vendor.requests", "cacert.pem")
+        except IOError:
+            cert_data = None
+
+        if not defined_cert and cert_data is not None:
+            cert_file = tempfile.NamedTemporaryFile(delete=False)
+            cert_file.write(cert_data)
+            cert_file.close()
+        else:
+            cert_file = None
+
+        try:
+            args = ["install"] + [{extra_args}]
+            if cert_file is not None:
+                args += ["--cert", cert_file.name]
+            args += sys.argv[1:]
+
+            sys.exit(_main(args))
+        finally:
+            if cert_file is not None:
+                os.remove(cert_file.name)
+    """.format(
+            defined_cert=defined_cert, extra_args=", ".join(repr(i) for i in extra_args)
+        )
+    ).encode("utf8")
+
+    if sys.version_info[0:2] == (3, 4) and "pip" in project_names:
+        at = project_names.index("pip")
+        project_names[at] = "pip<19.2"
+
+    cmd = [py_executable, "-"] + project_names
+    logger.start_progress("Installing {}...".format(", ".join(project_names)))
+    logger.indent += 2
+
+    env = {
+        "PYTHONPATH": python_path,
+        "PIP_FIND_LINKS": find_links,
+        "PIP_USE_WHEEL": "1",
+        "PIP_ONLY_BINARY": ":all:",
+        "PIP_USER": "0",
+        "PIP_NO_INPUT": "1",
+    }
+
+    if not download:
+        env["PIP_NO_INDEX"] = "1"
+
+    try:
+        call_subprocess(cmd, show_stdout=False, extra_env=env, stdin=script)
+    finally:
+        logger.indent -= 2
+        logger.end_progress()
+
+
+def _pip_config(py_executable, python_path):
+    cmd = [py_executable, "-m", "pip", "config", "list"]
+    config = {}
+    for line in call_subprocess(
+        cmd,
+        show_stdout=False,
+        extra_env={"PYTHONPATH": python_path},
+        remove_from_env=["PIP_VERBOSE", "PIP_QUIET"],
+        raise_on_return_code=False,
+    ):
+        key, _, value = line.partition("=")
+        if value:
+            config[key] = ast.literal_eval(value)
+    return config
+
+
+def create_environment(
+    home_dir,
+    site_packages=False,
+    clear=False,
+    prompt=None,
+    search_dirs=None,
+    download=False,
+    no_setuptools=False,
+    no_pip=False,
+    no_wheel=False,
+    symlink=True,
+):
     """
     Creates a new environment in ``home_dir``.
 
-    If ``site_packages`` is true (the default) then the global
-    ``site-packages/`` directory will be on the path.
+    If ``site_packages`` is true, then the global ``site-packages/``
+    directory will be on the path.
 
     If ``clear`` is true (default False) then the environment will
     first be cleared.
     """
     home_dir, lib_dir, inc_dir, bin_dir = path_locations(home_dir)
 
-    py_executable = os.path.abspath(install_python(
-        home_dir, lib_dir, inc_dir, bin_dir,
-        site_packages=site_packages, clear=clear))
+    py_executable = os.path.abspath(
+        install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages=site_packages, clear=clear, symlink=symlink)
+    )
 
-    install_distutils(lib_dir, home_dir)
+    install_distutils(home_dir)
 
-    if use_distribute or os.environ.get('VIRTUALENV_USE_DISTRIBUTE'):
-        install_distribute(py_executable, unzip=unzip_setuptools)
-    else:
-        install_setuptools(py_executable, unzip=unzip_setuptools)
+    to_install = []
 
-    install_pip(py_executable)
+    if not no_setuptools:
+        to_install.append("setuptools")
 
-    install_activate(home_dir, bin_dir)
+    if not no_pip:
+        to_install.append("pip")
 
-def path_locations(home_dir):
+    if not no_wheel:
+        to_install.append("wheel")
+
+    if to_install:
+        install_wheel(to_install, py_executable, search_dirs, download=download)
+
+    install_activate(home_dir, bin_dir, prompt)
+
+    install_python_config(home_dir, bin_dir, prompt)
+
+
+def is_executable_file(fpath):
+    return os.path.isfile(fpath) and is_executable(fpath)
+
+
+def path_locations(home_dir, dry_run=False):
     """Return the path locations for the environment (where libraries are,
     where scripts go, etc)"""
+    home_dir = os.path.abspath(home_dir)
+    lib_dir, inc_dir, bin_dir = None, None, None
     # XXX: We'd use distutils.sysconfig.get_python_inc/lib but its
     # prefix arg is broken: http://bugs.python.org/issue3386
-    if sys.platform == 'win32':
+    if IS_WIN:
         # Windows has lots of problems with executables with spaces in
         # the name; this function will remove them (using the ~1
         # format):
-        mkdir(home_dir)
-        if ' ' in home_dir:
+        if not dry_run:
+            mkdir(home_dir)
+        if " " in home_dir:
+            import ctypes
+
+            get_short_path_name = ctypes.windll.kernel32.GetShortPathNameW
+            size = max(len(home_dir) + 1, 256)
+            buf = ctypes.create_unicode_buffer(size)
             try:
-                import win32api
-            except ImportError:
-                print 'Error: the path "%s" has a space in it' % home_dir
-                print 'To handle these kinds of paths, the win32api module must be installed:'
-                print '  http://sourceforge.net/projects/pywin32/'
+                # noinspection PyUnresolvedReferences
+                u = unicode
+            except NameError:
+                u = str
+            ret = get_short_path_name(u(home_dir), buf, size)
+            if not ret:
+                print('Error: the path "{}" has a space in it'.format(home_dir))
+                print("We could not determine the short pathname for it.")
+                print("Exiting.")
                 sys.exit(3)
-            home_dir = win32api.GetShortPathName(home_dir)
-        lib_dir = join(home_dir, 'Lib')
-        inc_dir = join(home_dir, 'Include')
-        bin_dir = join(home_dir, 'Scripts')
-    elif is_jython:
-        lib_dir = join(home_dir, 'Lib')
-        inc_dir = join(home_dir, 'Include')
-        bin_dir = join(home_dir, 'bin')
-    else:
-        lib_dir = join(home_dir, 'lib', py_version)
-        inc_dir = join(home_dir, 'include', py_version)
-        bin_dir = join(home_dir, 'bin')
+            home_dir = str(buf.value)
+        lib_dir = join(home_dir, "Lib")
+        inc_dir = join(home_dir, "Include")
+        bin_dir = join(home_dir, "Scripts")
+    if IS_PYPY:
+        lib_dir = home_dir
+        inc_dir = join(home_dir, "include")
+        bin_dir = join(home_dir, "bin")
+    elif not IS_WIN:
+        lib_dir = join(home_dir, "lib", PY_VERSION)
+        inc_dir = join(home_dir, "include", PY_VERSION + ABI_FLAGS)
+        bin_dir = join(home_dir, "bin")
     return home_dir, lib_dir, inc_dir, bin_dir
 
-def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear):
+
+def change_prefix(filename, dst_prefix):
+    prefixes = [sys.prefix]
+
+    if IS_DARWIN:
+        prefixes.extend(
+            (
+                os.path.join("/Library/Python", VERSION, "site-packages"),
+                os.path.join(sys.prefix, "Extras", "lib", "python"),
+                os.path.join("~", "Library", "Python", VERSION, "site-packages"),
+                # Python 2.6 no-frameworks
+                os.path.join("~", ".local", "lib", "python", VERSION, "site-packages"),
+                # System Python 2.7 on OSX Mountain Lion
+                os.path.join("~", "Library", "Python", VERSION, "lib", "python", "site-packages"),
+            )
+        )
+
+    if hasattr(sys, "real_prefix"):
+        prefixes.append(sys.real_prefix)
+    if hasattr(sys, "base_prefix"):
+        prefixes.append(sys.base_prefix)
+    prefixes = list(map(os.path.expanduser, prefixes))
+    prefixes = list(map(os.path.abspath, prefixes))
+    # Check longer prefixes first so we don't split in the middle of a filename
+    prefixes = sorted(prefixes, key=len, reverse=True)
+    filename = os.path.abspath(filename)
+    # On Windows, make sure drive letter is uppercase
+    if IS_WIN and filename[0] in "abcdefghijklmnopqrstuvwxyz":
+        filename = filename[0].upper() + filename[1:]
+    for i, prefix in enumerate(prefixes):
+        if IS_WIN and prefix[0] in "abcdefghijklmnopqrstuvwxyz":
+            prefixes[i] = prefix[0].upper() + prefix[1:]
+    for src_prefix in prefixes:
+        if filename.startswith(src_prefix):
+            _, relative_path = filename.split(src_prefix, 1)
+            if src_prefix != os.sep:  # sys.prefix == "/"
+                assert relative_path[0] == os.sep
+                relative_path = relative_path[1:]
+            return join(dst_prefix, relative_path)
+    raise AssertionError("Filename {} does not start with any of these prefixes: {}".format(filename, prefixes))
+
+
+def find_module_filename(modname):
+
+    if sys.version_info < (3, 4):
+        # noinspection PyDeprecation
+        import imp
+
+        try:
+            file_handler, filepath, _ = imp.find_module(modname)
+        except ImportError:
+            return None
+        else:
+            if file_handler is not None:
+                file_handler.close()
+            return filepath
+    else:
+        import importlib.util
+
+        if sys.version_info < (3, 5):
+
+            def find_spec(modname):
+                # noinspection PyDeprecation
+                loader = importlib.find_loader(modname)
+                if loader is None:
+                    return None
+                else:
+                    return importlib.util.spec_from_loader(modname, loader)
+
+        else:
+            find_spec = importlib.util.find_spec
+
+        spec = find_spec(modname)
+        if spec is None:
+            return None
+        if not os.path.exists(spec.origin):
+            # https://bitbucket.org/pypy/pypy/issues/2944/origin-for-several-builtin-modules
+            # on pypy3, some builtin modules have a bogus build-time file path, ignore them
+            return None
+        filepath = spec.origin
+        # https://www.python.org/dev/peps/pep-3147/#file guarantee to be non-cached
+        if os.path.basename(filepath) == "__init__.py":
+            filepath = os.path.dirname(filepath)
+        return filepath
+
+
+def copy_required_modules(dst_prefix, symlink):
+    for modname in REQUIRED_MODULES:
+        if modname in sys.builtin_module_names:
+            logger.info("Ignoring built-in bootstrap module: %s" % modname)
+            continue
+        filename = find_module_filename(modname)
+        if filename is None:
+            logger.info("Cannot import bootstrap module: %s" % modname)
+        else:
+            # special-case custom readline.so on OS X, but not for pypy:
+            if (
+                modname == "readline"
+                and IS_DARWIN
+                and not (IS_PYPY or filename.endswith(join("lib-dynload", "readline.so")))
+            ):
+                dst_filename = join(dst_prefix, "lib", PY_VERSION, "readline.so")
+            elif modname == "readline" and IS_WIN:
+                # special-case for Windows, where readline is not a standard module, though it may have been installed
+                # in site-packages by a third-party package
+                dst_filename = None
+            else:
+                dst_filename = change_prefix(filename, dst_prefix)
+            if dst_filename is not None:
+                copyfile(filename, dst_filename, symlink)
+            if filename.endswith(".pyc"):
+                py_file = filename[:-1]
+                if os.path.exists(py_file):
+                    copyfile(py_file, dst_filename[:-1], symlink)
+
+
+def copy_required_files(src_dir, lib_dir, symlink):
+    if not os.path.isdir(src_dir):
+        return
+    for fn in os.listdir(src_dir):
+        bn = os.path.splitext(fn)[0]
+        if fn != "site-packages" and bn in REQUIRED_FILES:
+            copyfile(join(src_dir, fn), join(lib_dir, fn), symlink)
+
+
+def copy_license(prefix, dst_prefix, lib_dir, symlink):
+    """Copy the license file so `license()` builtin works"""
+    lib64_dir = lib_dir.replace("lib", "lib64")
+    for license_path in (
+        # posix cpython
+        os.path.join(prefix, os.path.relpath(lib_dir, dst_prefix), "LICENSE.txt"),
+        # posix cpython installed in /usr/lib64
+        os.path.join(prefix, os.path.relpath(lib64_dir, dst_prefix), "LICENSE.txt"),
+        # windows cpython
+        os.path.join(prefix, "LICENSE.txt"),
+        # pypy
+        os.path.join(prefix, "LICENSE"),
+    ):
+        if os.path.exists(license_path):
+            dest = subst_path(license_path, prefix, dst_prefix)
+            copyfile(license_path, dest, symlink)
+            return
+    logger.warn("No LICENSE.txt / LICENSE found in source")
+
+
+def copy_include_dir(include_src, include_dest, symlink):
+    """Copy headers from *include_src* to *include_dest* symlinking if required"""
+    if not os.path.isdir(include_src):
+        return
+    # PyPy headers are located in ``pypy-dir/include`` and following code
+    # avoids making ``venv-dir/include`` symlink to it
+    if IS_PYPY:
+        for fn in os.listdir(include_src):
+            copyfile(join(include_src, fn), join(include_dest, fn), symlink)
+    else:
+        copyfile(include_src, include_dest, symlink)
+
+
+def copy_tcltk(src, dest, symlink):
+    """ copy tcl/tk libraries on Windows (issue #93) """
+    for lib_version in "8.5", "8.6":
+        for libname in "tcl", "tk":
+            src_dir = join(src, "tcl", libname + lib_version)
+            dest_dir = join(dest, "tcl", libname + lib_version)
+            # Only copy the dirs from the above combinations that exist
+            if os.path.exists(src_dir) and not os.path.exists(dest_dir):
+                copy_file_or_folder(src_dir, dest_dir, symlink)
+
+
+def subst_path(prefix_path, prefix, home_dir):
+    prefix_path = os.path.normpath(prefix_path)
+    prefix = os.path.normpath(prefix)
+    home_dir = os.path.normpath(home_dir)
+    if not prefix_path.startswith(prefix):
+        logger.warn("Path not in prefix %r %r", prefix_path, prefix)
+        return
+    return prefix_path.replace(prefix, home_dir, 1)
+
+
+def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear, symlink=True):
     """Install just the base environment, no distutils patches etc"""
     if sys.executable.startswith(bin_dir):
-        print 'Please use the *system* python to run this script'
+        print("Please use the *system* python to run this script")
         return
 
     if clear:
-        rmtree(lib_dir)
-        ## FIXME: why not delete it?
-        ## Maybe it should delete everything with #!/path/to/venv/python in it
-        logger.notify('Not deleting %s', bin_dir)
+        rm_tree(lib_dir)
+        # FIXME: why not delete it?
+        # Maybe it should delete everything with #!/path/to/venv/python in it
+        logger.notify("Not deleting %s", bin_dir)
 
-    if hasattr(sys, 'real_prefix'):
-        logger.notify('Using real prefix %r' % sys.real_prefix)
+    if hasattr(sys, "real_prefix"):
+        logger.notify("Using real prefix %r", sys.real_prefix)
         prefix = sys.real_prefix
+    elif hasattr(sys, "base_prefix"):
+        logger.notify("Using base prefix %r", sys.base_prefix)
+        prefix = sys.base_prefix
     else:
         prefix = sys.prefix
+    prefix = os.path.abspath(prefix)
     mkdir(lib_dir)
-    fix_lib64(lib_dir)
+    fix_lib64(lib_dir, symlink)
     stdlib_dirs = [os.path.dirname(os.__file__)]
-    if sys.platform == 'win32':
-        stdlib_dirs.append(join(os.path.dirname(stdlib_dirs[0]), 'DLLs'))
-    elif sys.platform == 'darwin':
-        stdlib_dirs.append(join(stdlib_dirs[0], 'site-packages'))
-    for stdlib_dir in stdlib_dirs:
-        if not os.path.isdir(stdlib_dir):
-            continue
-        if hasattr(os, 'symlink'):
-            logger.info('Symlinking Python bootstrap modules')
-        else:
-            logger.info('Copying Python bootstrap modules')
-        logger.indent += 2
-        try:
-            for fn in os.listdir(stdlib_dir):
-                if fn != 'site-packages' and os.path.splitext(fn)[0] in REQUIRED_MODULES:
-                    copyfile(join(stdlib_dir, fn), join(lib_dir, fn))
-        finally:
-            logger.indent -= 2
-    mkdir(join(lib_dir, 'site-packages'))
-    writefile(join(lib_dir, 'site.py'), SITE_PY)
-    writefile(join(lib_dir, 'orig-prefix.txt'), prefix)
-    site_packages_filename = join(lib_dir, 'no-global-site-packages.txt')
+    if IS_WIN:
+        stdlib_dirs.append(join(os.path.dirname(stdlib_dirs[0]), "DLLs"))
+    elif IS_DARWIN:
+        stdlib_dirs.append(join(stdlib_dirs[0], "site-packages"))
+    if hasattr(os, "symlink"):
+        logger.info("Symlinking Python bootstrap modules")
+    else:
+        logger.info("Copying Python bootstrap modules")
+    logger.indent += 2
+    try:
+        # copy required files...
+        for stdlib_dir in stdlib_dirs:
+            copy_required_files(stdlib_dir, lib_dir, symlink)
+        # ...and modules
+        copy_required_modules(home_dir, symlink)
+        copy_license(prefix, home_dir, lib_dir, symlink)
+    finally:
+        logger.indent -= 2
+    # ...copy tcl/tk
+    if IS_WIN:
+        copy_tcltk(prefix, home_dir, symlink)
+    mkdir(join(lib_dir, "site-packages"))
+    import site
+
+    site_filename = site.__file__
+    if site_filename.endswith(".pyc") or site_filename.endswith(".pyo"):
+        site_filename = site_filename[:-1]
+    elif site_filename.endswith("$py.class"):
+        site_filename = site_filename.replace("$py.class", ".py")
+    site_filename_dst = change_prefix(site_filename, home_dir)
+    site_dir = os.path.dirname(site_filename_dst)
+    writefile(site_filename_dst, SITE_PY)
+    writefile(join(site_dir, "orig-prefix.txt"), prefix)
+    site_packages_filename = join(site_dir, "no-global-site-packages.txt")
     if not site_packages:
-        writefile(site_packages_filename, '')
-    else:
-        if os.path.exists(site_packages_filename):
-            logger.info('Deleting %s' % site_packages_filename)
-            os.unlink(site_packages_filename)
+        writefile(site_packages_filename, "")
 
-    stdinc_dir = join(prefix, 'include', py_version)
-    if os.path.exists(stdinc_dir):
-        copyfile(stdinc_dir, inc_dir)
+    if IS_PYPY or IS_WIN:
+        standard_lib_include_dir = join(prefix, "include")
     else:
-        logger.debug('No include dir %s' % stdinc_dir)
+        standard_lib_include_dir = join(prefix, "include", PY_VERSION + ABI_FLAGS)
+    if os.path.exists(standard_lib_include_dir):
+        copy_include_dir(standard_lib_include_dir, inc_dir, symlink)
+    else:
+        logger.debug("No include dir %s", standard_lib_include_dir)
 
-    if sys.exec_prefix != prefix:
-        if sys.platform == 'win32':
-            exec_dir = join(sys.exec_prefix, 'lib')
-        elif is_jython:
-            exec_dir = join(sys.exec_prefix, 'Lib')
+    platform_include_dir = distutils.sysconfig.get_python_inc(plat_specific=1)
+    if platform_include_dir != standard_lib_include_dir:
+        platform_include_dest = distutils.sysconfig.get_python_inc(plat_specific=1, prefix=home_dir)
+        if platform_include_dir == platform_include_dest:
+            # Do platinc_dest manually due to a CPython bug;
+            # not http://bugs.python.org/issue3386 but a close cousin
+            platform_include_dest = subst_path(platform_include_dir, prefix, home_dir)
+        if platform_include_dest:
+            # PyPy's stdinc_dir and prefix are relative to the original binary
+            # (traversing virtualenvs), whereas the platinc_dir is relative to
+            # the inner virtualenv and ignores the prefix argument.
+            # This seems more evolved than designed.
+            copy_include_dir(platform_include_dir, platform_include_dest, symlink)
+
+    # pypy never uses exec_prefix, just ignore it
+    if os.path.realpath(sys.exec_prefix) != os.path.realpath(prefix) and not IS_PYPY:
+        if IS_WIN:
+            exec_dir = join(sys.exec_prefix, "lib")
         else:
-            exec_dir = join(sys.exec_prefix, 'lib', py_version)
-        for fn in os.listdir(exec_dir):
-            copyfile(join(exec_dir, fn), join(lib_dir, fn))
-
-    if is_jython:
-        # Jython has either jython-dev.jar and javalib/ dir, or just
-        # jython.jar
-        for name in 'jython-dev.jar', 'javalib', 'jython.jar':
-            src = join(prefix, name)
-            if os.path.exists(src):
-                copyfile(src, join(home_dir, name))
-        # XXX: registry should always exist after Jython 2.5rc1
-        src = join(prefix, 'registry')
-        if os.path.exists(src):
-            copyfile(src, join(home_dir, 'registry'), symlink=False)
-        copyfile(join(prefix, 'cachedir'), join(home_dir, 'cachedir'),
-                 symlink=False)
+            exec_dir = join(sys.exec_prefix, "lib", PY_VERSION)
+        copy_required_files(exec_dir, lib_dir, symlink)
 
     mkdir(bin_dir)
     py_executable = join(bin_dir, os.path.basename(sys.executable))
-    if 'Python.framework' in prefix:
-        if re.search(r'/Python(?:-32|-64)*$', py_executable):
+    if "Python.framework" in prefix or "Python3.framework" in prefix:
+        # OS X framework builds cause validation to break
+        # https://github.com/pypa/virtualenv/issues/322
+        if os.environ.get("__PYVENV_LAUNCHER__"):
+            del os.environ["__PYVENV_LAUNCHER__"]
+        if re.search(r"/Python(?:-32|-64)*$", py_executable):
             # The name of the python executable is not quite what
             # we want, rename it.
-            py_executable = os.path.join(
-                    os.path.dirname(py_executable), 'python')
+            py_executable = os.path.join(os.path.dirname(py_executable), "python")
 
-    logger.notify('New %s executable in %s', expected_exe, py_executable)
+    logger.notify("New %s executable in %s", EXPECTED_EXE, py_executable)
+    pc_build_dir = os.path.dirname(sys.executable)
+    pyd_pth = os.path.join(lib_dir, "site-packages", "virtualenv_builddir_pyd.pth")
+    if IS_WIN and os.path.exists(os.path.join(pc_build_dir, "build.bat")):
+        logger.notify("Detected python running from build directory %s", pc_build_dir)
+        logger.notify("Writing .pth file linking to build directory for *.pyd files")
+        writefile(pyd_pth, pc_build_dir)
+    else:
+        if os.path.exists(pyd_pth):
+            logger.info("Deleting %s (not Windows env or not build directory python)", pyd_pth)
+            os.unlink(pyd_pth)
+
     if sys.executable != py_executable:
-        ## FIXME: could I just hard link?
+        # FIXME: could I just hard link?
         executable = sys.executable
-        if sys.platform == 'cygwin' and os.path.exists(executable + '.exe'):
-            # Cygwin misreports sys.executable sometimes
-            executable += '.exe'
-            py_executable += '.exe'
-            logger.info('Executable actually exists in %s' % executable)
         shutil.copyfile(executable, py_executable)
         make_exe(py_executable)
-        if sys.platform == 'win32' or sys.platform == 'cygwin':
-            pythonw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
-            if os.path.exists(pythonw):
-                logger.info('Also created pythonw.exe')
-                shutil.copyfile(pythonw, os.path.join(os.path.dirname(py_executable), 'pythonw.exe'))
+        if IS_WIN or IS_CYGWIN:
+            python_w = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if os.path.exists(python_w):
+                logger.info("Also created pythonw.exe")
+                shutil.copyfile(python_w, os.path.join(os.path.dirname(py_executable), "pythonw.exe"))
+            python_d = os.path.join(os.path.dirname(sys.executable), "python_d.exe")
+            python_d_dest = os.path.join(os.path.dirname(py_executable), "python_d.exe")
+            if os.path.exists(python_d):
+                logger.info("Also created python_d.exe")
+                shutil.copyfile(python_d, python_d_dest)
+            elif os.path.exists(python_d_dest):
+                logger.info("Removed python_d.exe as it is no longer at the source")
+                os.unlink(python_d_dest)
 
-    if os.path.splitext(os.path.basename(py_executable))[0] != expected_exe:
-        secondary_exe = os.path.join(os.path.dirname(py_executable),
-                                     expected_exe)
+            # we need to copy the DLL to enforce that windows will load the correct one.
+            # may not exist if we are cygwin.
+            if IS_PYPY:
+                py_executable_dll_s = [("libpypy-c.dll", "libpypy_d-c.dll")]
+            else:
+                py_executable_dll_s = [
+                    ("python{}.dll".format(sys.version_info[0]), "python{}_d.dll".format(sys.version_info[0])),
+                    (
+                        "python{}{}.dll".format(sys.version_info[0], sys.version_info[1]),
+                        "python{}{}_d.dll".format(sys.version_info[0], sys.version_info[1]),
+                    ),
+                ]
+
+            for py_executable_dll, py_executable_dll_d in py_executable_dll_s:
+                python_dll = os.path.join(os.path.dirname(sys.executable), py_executable_dll)
+                python_dll_d = os.path.join(os.path.dirname(sys.executable), py_executable_dll_d)
+                python_dll_d_dest = os.path.join(os.path.dirname(py_executable), py_executable_dll_d)
+                if os.path.exists(python_dll):
+                    logger.info("Also created %s", py_executable_dll)
+                    shutil.copyfile(python_dll, os.path.join(os.path.dirname(py_executable), py_executable_dll))
+                if os.path.exists(python_dll_d):
+                    logger.info("Also created %s", py_executable_dll_d)
+                    shutil.copyfile(python_dll_d, python_dll_d_dest)
+                elif os.path.exists(python_dll_d_dest):
+                    logger.info("Removed %s as the source does not exist", python_dll_d_dest)
+                    os.unlink(python_dll_d_dest)
+        if IS_PYPY:
+            # make a symlink python --> pypy-c
+            python_executable = os.path.join(os.path.dirname(py_executable), "python")
+            if IS_WIN or IS_CYGWIN:
+                python_executable += ".exe"
+            logger.info("Also created executable %s", python_executable)
+            copyfile(py_executable, python_executable, symlink)
+
+            if IS_WIN:
+                for name in ["libexpat.dll", "libeay32.dll", "ssleay32.dll", "sqlite3.dll", "tcl85.dll", "tk85.dll"]:
+                    src = join(prefix, name)
+                    if os.path.exists(src):
+                        copyfile(src, join(bin_dir, name), symlink)
+
+                for d in sys.path:
+                    if d.endswith("lib_pypy"):
+                        break
+                else:
+                    logger.fatal("Could not find lib_pypy in sys.path")
+                    raise SystemExit(3)
+                logger.info("Copying lib_pypy")
+                copyfile(d, os.path.join(home_dir, "lib_pypy"), symlink)
+
+    if os.path.splitext(os.path.basename(py_executable))[0] != EXPECTED_EXE:
+        secondary_exe = os.path.join(os.path.dirname(py_executable), EXPECTED_EXE)
         py_executable_ext = os.path.splitext(py_executable)[1]
-        if py_executable_ext == '.exe':
+        if py_executable_ext.lower() == ".exe":
             # python2.4 gives an extension of '.4' :P
             secondary_exe += py_executable_ext
         if os.path.exists(secondary_exe):
-            logger.warn('Not overwriting existing %s script %s (you must use %s)'
-                        % (expected_exe, secondary_exe, py_executable))
+            logger.warn(
+                "Not overwriting existing {} script {} (you must use {})".format(
+                    EXPECTED_EXE, secondary_exe, py_executable
+                )
+            )
         else:
-            logger.notify('Also creating executable in %s' % secondary_exe)
+            logger.notify("Also creating executable in %s", secondary_exe)
             shutil.copyfile(sys.executable, secondary_exe)
             make_exe(secondary_exe)
 
-    if 'Python.framework' in prefix:
-        logger.debug('MacOSX Python framework detected')
-
-        # Make sure we use the the embedded interpreter inside
-        # the framework, even if sys.executable points to
-        # the stub executable in ${sys.prefix}/bin
-        # See http://groups.google.com/group/python-virtualenv/
-        #                              browse_thread/thread/17cab2f85da75951
-        shutil.copy(
-                os.path.join(
-                    prefix, 'Resources/Python.app/Contents/MacOS/%s' % os.path.basename(sys.executable)),
-                py_executable)
+    if ".framework" in prefix:
+        original_python = None
+        if "Python.framework" in prefix or "Python3.framework" in prefix:
+            logger.debug("MacOSX Python framework detected")
+            # Make sure we use the embedded interpreter inside
+            # the framework, even if sys.executable points to
+            # the stub executable in ${sys.prefix}/bin
+            # See http://groups.google.com/group/python-virtualenv/
+            #                              browse_thread/thread/17cab2f85da75951
+            original_python = os.path.join(prefix, "Resources/Python.app/Contents/MacOS/Python")
+        if "EPD" in prefix:
+            logger.debug("EPD framework detected")
+            original_python = os.path.join(prefix, "bin/python")
+        shutil.copy(original_python, py_executable)
 
         # Copy the framework's dylib into the virtual
         # environment
-        virtual_lib = os.path.join(home_dir, '.Python')
+        virtual_lib = os.path.join(home_dir, ".Python")
 
         if os.path.exists(virtual_lib):
             os.unlink(virtual_lib)
-        copyfile(
-            os.path.join(prefix, 'Python'),
-            virtual_lib)
+        lib_name = "Python3" if "Python3.framework" in prefix else "Python"
+        copyfile(os.path.join(prefix, lib_name), virtual_lib, symlink)
 
         # And then change the install_name of the copied python executable
+        search = (
+            "@executable_path/../../../../Python3" if "Python3.framework" in prefix else os.path.join(prefix, lib_name)
+        )
+        # noinspection PyBroadException
         try:
-            call_subprocess(
-                ["install_name_tool", "-change",
-                 os.path.join(prefix, 'Python'),
-                 '@executable_path/../.Python',
-                 py_executable])
-        except:
-            logger.fatal(
-                "Could not call install_name_tool -- you must have Apple's development tools installed")
-            raise
+            mach_o_change(py_executable, search, "@executable_path/../.Python")
+        except Exception:
+            e = sys.exc_info()[1]
+            logger.warn("Could not call mach_o_change: %s. " "Trying to call install_name_tool instead.", e)
+            try:
+                call_subprocess(["install_name_tool", "-change", search, "@executable_path/../.Python", py_executable])
+            except Exception:
+                logger.fatal("Could not call install_name_tool -- you must " "have Apple's development tools installed")
+                raise
 
-        # Some tools depend on pythonX.Y being present
-        py_executable_version = '%s.%s' % (
-            sys.version_info[0], sys.version_info[1])
-        if not py_executable.endswith(py_executable_version):
-            # symlinking pythonX.Y > python
-            pth = py_executable + '%s.%s' % (
-                    sys.version_info[0], sys.version_info[1])
-            if os.path.exists(pth):
-                os.unlink(pth)
-            os.symlink('python', pth)
+    if not IS_WIN:
+        # Ensure that 'python', 'pythonX' and 'pythonX.Y' all exist
+        py_exe_version_major = "python{}".format(sys.version_info[0])
+        py_exe_version_major_minor = "python{}.{}".format(sys.version_info[0], sys.version_info[1])
+        py_exe_no_version = "python"
+        required_symlinks = [py_exe_no_version, py_exe_version_major, py_exe_version_major_minor]
+
+        py_executable_base = os.path.basename(py_executable)
+
+        if py_executable_base in required_symlinks:
+            # Don't try to symlink to yourself.
+            required_symlinks.remove(py_executable_base)
+
+        for pth in required_symlinks:
+            full_pth = join(bin_dir, pth)
+            if os.path.exists(full_pth):
+                os.unlink(full_pth)
+            if symlink:
+                os.symlink(py_executable_base, full_pth)
+            else:
+                copyfile(py_executable, full_pth, symlink)
+
+    cmd = [
+        py_executable,
+        "-c",
+        "import sys;out=sys.stdout;" 'getattr(out, "buffer", out).write(sys.prefix.encode("utf-8"))',
+    ]
+    logger.info('Testing executable with %s %s "%s"', *cmd)
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        proc_stdout, proc_stderr = proc.communicate()
+    except OSError:
+        e = sys.exc_info()[1]
+        if e.errno == errno.EACCES:
+            logger.fatal("ERROR: The executable {} could not be run: {}".format(py_executable, e))
+            sys.exit(100)
         else:
-            # reverse symlinking python -> pythonX.Y (with --python)
-            pth = join(bin_dir, 'python')
-            if os.path.exists(pth):
-                os.unlink(pth)
-            os.symlink(os.path.basename(py_executable), pth)
+            raise e
 
-    if sys.platform == 'win32' and ' ' in py_executable:
-        # There's a bug with subprocess on Windows when using a first
-        # argument that has a space in it.  Instead we have to quote
-        # the value:
-        py_executable = '"%s"' % py_executable
-    cmd = [py_executable, '-c', 'import sys; print sys.prefix']
-    logger.info('Testing executable with %s %s "%s"' % tuple(cmd))
-    proc = subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE)
-    proc_stdout, proc_stderr = proc.communicate()
-    proc_stdout = os.path.normcase(os.path.abspath(proc_stdout.strip()))
-    if proc_stdout != os.path.normcase(os.path.abspath(home_dir)):
-        logger.fatal(
-            'ERROR: The executable %s is not functioning' % py_executable)
-        logger.fatal(
-            'ERROR: It thinks sys.prefix is %r (should be %r)'
-            % (proc_stdout, os.path.normcase(os.path.abspath(home_dir))))
-        logger.fatal(
-            'ERROR: virtualenv is not compatible with this system or executable')
-        if sys.platform == 'win32':
+    proc_stdout = proc_stdout.strip().decode("utf-8")
+    # normalize paths using realpath to ensure that a virtualenv correctly identifies itself even
+    # when addressed over a symlink
+    proc_stdout = os.path.normcase(os.path.realpath(proc_stdout))
+    norm_home_dir = os.path.normcase(os.path.realpath(home_dir))
+    if hasattr(norm_home_dir, "decode"):
+        norm_home_dir = norm_home_dir.decode(sys.getfilesystemencoding())
+    if proc_stdout != norm_home_dir:
+        logger.fatal("ERROR: The executable %s is not functioning", py_executable)
+        logger.fatal("ERROR: It thinks sys.prefix is {!r} (should be {!r})".format(proc_stdout, norm_home_dir))
+        logger.fatal("ERROR: virtualenv is not compatible with this system or executable")
+        if IS_WIN:
             logger.fatal(
-                'Note: some Windows users have reported this error when they installed Python for "Only this user".  The problem may be resolvable if you install Python "For all users".  (See https://bugs.launchpad.net/virtualenv/+bug/352844)')
+                "Note: some Windows users have reported this error when they "
+                'installed Python for "Only this user" or have multiple '
+                "versions of Python installed. Copying the appropriate "
+                "PythonXX.dll to the virtualenv Scripts/ directory may fix "
+                "this problem."
+            )
         sys.exit(100)
     else:
-        logger.info('Got sys.prefix result: %r' % proc_stdout)
+        logger.info("Got sys.prefix result: %r", proc_stdout)
 
-    pydistutils = os.path.expanduser('~/.pydistutils.cfg')
+    pydistutils = os.path.expanduser("~/.pydistutils.cfg")
     if os.path.exists(pydistutils):
-        logger.notify('Please make sure you remove any previous custom paths from '
-                      'your %s file.' % pydistutils)
-    ## FIXME: really this should be calculated earlier
+        logger.notify("Please make sure you remove any previous custom paths from " "your %s file.", pydistutils)
+    # FIXME: really this should be calculated earlier
+
+    fix_local_scheme(home_dir, symlink)
+
+    if site_packages:
+        if os.path.exists(site_packages_filename):
+            logger.info("Deleting %s", site_packages_filename)
+            os.unlink(site_packages_filename)
+
     return py_executable
 
-def install_activate(home_dir, bin_dir):
-    if sys.platform == 'win32' or is_jython and os._name == 'nt':
-        files = {'activate.bat': ACTIVATE_BAT,
-                 'deactivate.bat': DEACTIVATE_BAT}
-        if os.environ.get('OS') == 'Windows_NT' and os.environ.get('OSTYPE') == 'cygwin':
-            files['activate'] = ACTIVATE_SH
+
+def install_activate(home_dir, bin_dir, prompt=None):
+    if IS_WIN:
+        files = {"activate.bat": ACTIVATE_BAT, "deactivate.bat": DEACTIVATE_BAT, "activate.ps1": ACTIVATE_PS}
+
+        # MSYS needs paths of the form /c/path/to/file
+        drive, tail = os.path.splitdrive(home_dir.replace(os.sep, "/"))
+        home_dir_msys = (drive and "/{}{}" or "{}{}").format(drive[:1], tail)
+
+        # Run-time conditional enables (basic) Cygwin compatibility
+        home_dir_sh = """$(if [ "$OSTYPE" "==" "cygwin" ]; then cygpath -u '{}'; else echo '{}'; fi;)""".format(
+            home_dir, home_dir_msys
+        )
+        files["activate"] = ACTIVATE_SH.replace("__VIRTUAL_ENV__", home_dir_sh)
+
     else:
-        files = {'activate': ACTIVATE_SH}
-    files['activate_this.py'] = ACTIVATE_THIS
+        files = {
+            "activate": ACTIVATE_SH,
+            "activate.fish": ACTIVATE_FISH,
+            "activate.csh": ACTIVATE_CSH,
+            "activate.ps1": ACTIVATE_PS,
+        }
+    files["activate_this.py"] = ACTIVATE_THIS
+
+    if sys.version_info >= (3, 4):
+        # Add xonsh support
+        files["activate.xsh"] = ACTIVATE_XSH
+
+    install_files(home_dir, bin_dir, prompt, files)
+
+
+def install_files(home_dir, bin_dir, prompt, files):
+    if hasattr(home_dir, "decode"):
+        home_dir = home_dir.decode(sys.getfilesystemencoding())
+    virtualenv_name = os.path.basename(home_dir)
     for name, content in files.items():
-        content = content.replace('__VIRTUAL_ENV__', os.path.abspath(home_dir))
-        content = content.replace('__VIRTUAL_NAME__', os.path.basename(os.path.abspath(home_dir)))
-        content = content.replace('__BIN_NAME__', os.path.basename(bin_dir))
+        content = content.replace("__VIRTUAL_PROMPT__", prompt or "")
+        content = content.replace("__VIRTUAL_WINPROMPT__", prompt or "({}) ".format(virtualenv_name))
+        content = content.replace("__VIRTUAL_ENV__", home_dir)
+        content = content.replace("__VIRTUAL_NAME__", virtualenv_name)
+        content = content.replace("__BIN_NAME__", os.path.basename(bin_dir))
+        content = content.replace("__PATH_SEP__", os.pathsep)
         writefile(os.path.join(bin_dir, name), content)
 
-def install_distutils(lib_dir, home_dir):
-    distutils_path = os.path.join(lib_dir, 'distutils')
-    mkdir(distutils_path)
-    ## FIXME: maybe this prefix setting should only be put in place if
-    ## there's a local distutils.cfg with a prefix setting?
-    home_dir = os.path.abspath(home_dir)
-    ## FIXME: this is breaking things, removing for now:
-    #distutils_cfg = DISTUTILS_CFG + "\n[install]\nprefix=%s\n" % home_dir
-    writefile(os.path.join(distutils_path, '__init__.py'), DISTUTILS_INIT)
-    writefile(os.path.join(distutils_path, 'distutils.cfg'), DISTUTILS_CFG, overwrite=False)
 
-def fix_lib64(lib_dir):
+def install_python_config(home_dir, bin_dir, prompt=None):
+    if IS_WIN:
+        files = {}
+    else:
+        files = {"python-config": PYTHON_CONFIG}
+    install_files(home_dir, bin_dir, prompt, files)
+    for name, _ in files.items():
+        make_exe(os.path.join(bin_dir, name))
+
+
+def install_distutils(home_dir):
+    distutils_path = change_prefix(distutils.__path__[0], home_dir)
+    mkdir(distutils_path)
+    # FIXME: maybe this prefix setting should only be put in place if
+    # there's a local distutils.cfg with a prefix setting?
+    # FIXME: this is breaking things, removing for now:
+    # distutils_cfg = DISTUTILS_CFG + "\n[install]\nprefix=%s\n" home_dir
+    writefile(os.path.join(distutils_path, "__init__.py"), DISTUTILS_INIT)
+    writefile(os.path.join(distutils_path, "distutils.cfg"), DISTUTILS_CFG, overwrite=False)
+
+
+def fix_local_scheme(home_dir, symlink=True):
+    """
+    Platforms that use the "posix_local" install scheme (like Ubuntu with
+    Python 2.7) need to be given an additional "local" location, sigh.
+    """
+    try:
+        import sysconfig
+    except ImportError:
+        pass
+    else:
+        # noinspection PyProtectedMember
+        if sysconfig._get_default_scheme() == "posix_local":
+            local_path = os.path.join(home_dir, "local")
+            if not os.path.exists(local_path):
+                os.mkdir(local_path)
+                for subdir_name in os.listdir(home_dir):
+                    if subdir_name == "local":
+                        continue
+                    copyfile(
+                        os.path.abspath(os.path.join(home_dir, subdir_name)),
+                        os.path.join(local_path, subdir_name),
+                        symlink,
+                    )
+
+
+def fix_lib64(lib_dir, symlink=True):
     """
     Some platforms (particularly Gentoo on x64) put things in lib64/pythonX.Y
     instead of lib/pythonX.Y.  If this is such a platform we'll just create a
     symlink so lib64 points to lib
     """
-    if [p for p in distutils.sysconfig.get_config_vars().values()
-        if isinstance(p, basestring) and 'lib64' in p]:
-        logger.debug('This system uses lib64; symlinking lib64 to lib')
-        assert os.path.basename(lib_dir) == 'python%s' % sys.version[:3], (
-            "Unexpected python lib dir: %r" % lib_dir)
-        lib_parent = os.path.dirname(lib_dir)
-        assert os.path.basename(lib_parent) == 'lib', (
-            "Unexpected parent dir: %r" % lib_parent)
-        copyfile(lib_parent, os.path.join(os.path.dirname(lib_parent), 'lib64'))
+    # PyPy's library path scheme is not affected by this.
+    # Return early or we will die on the following assert.
+    if IS_PYPY:
+        logger.debug("PyPy detected, skipping lib64 symlinking")
+        return
+    # Check we have a lib64 library path
+    if not [p for p in distutils.sysconfig.get_config_vars().values() if isinstance(p, basestring) and "lib64" in p]:
+        return
+
+    logger.debug("This system uses lib64; symlinking lib64 to lib")
+
+    assert os.path.basename(lib_dir) == PY_VERSION, "Unexpected python lib dir: {!r}".format(lib_dir)
+    lib_parent = os.path.dirname(lib_dir)
+    top_level = os.path.dirname(lib_parent)
+    lib_dir = os.path.join(top_level, "lib")
+    lib64_link = os.path.join(top_level, "lib64")
+    assert os.path.basename(lib_parent) == "lib", "Unexpected parent dir: {!r}".format(lib_parent)
+    if os.path.lexists(lib64_link):
+        return
+    if symlink:
+        os.symlink("lib", lib64_link)
+    else:
+        copyfile(lib_dir, lib64_link, symlink=False)
+
 
 def resolve_interpreter(exe):
     """
     If the executable given isn't an absolute path, search $PATH for the interpreter
     """
+    # If the "executable" is a version number, get the installed executable for
+    # that version
+    orig_exe = exe
+    python_versions = get_installed_pythons()
+    if exe in python_versions:
+        exe = python_versions[exe]
+
     if os.path.abspath(exe) != exe:
-        paths = os.environ.get('PATH', '').split(os.pathsep)
-        for path in paths:
-            if os.path.exists(os.path.join(path, exe)):
-                exe = os.path.join(path, exe)
-                break
+        exe = distutils.spawn.find_executable(exe) or exe
     if not os.path.exists(exe):
-        logger.fatal('The executable %s (from --python=%s) does not exist' % (exe, exe))
-        sys.exit(3)
+        logger.fatal("The path {} (from --python={}) does not exist".format(exe, orig_exe))
+        raise SystemExit(3)
+    if not is_executable(exe):
+        logger.fatal("The path {} (from --python={}) is not an executable file".format(exe, orig_exe))
+        raise SystemExit(3)
     return exe
 
-############################################################
-## Relocating the environment:
 
+def is_executable(exe):
+    """Checks a file is executable"""
+    return os.path.isfile(exe) and os.access(exe, os.X_OK)
+
+
+# Relocating the environment:
 def make_environment_relocatable(home_dir):
     """
     Makes the already-existing environment use relative paths, and takes out
     the #!-based environment selection in scripts.
     """
-    activate_this = os.path.join(home_dir, 'bin', 'activate_this.py')
+    home_dir, lib_dir, inc_dir, bin_dir = path_locations(home_dir)
+    activate_this = os.path.join(bin_dir, "activate_this.py")
     if not os.path.exists(activate_this):
         logger.fatal(
-            'The environment doesn\'t have a file %s -- please re-run virtualenv '
-            'on this environment to update it' % activate_this)
-    fixup_scripts(home_dir)
+            "The environment doesn't have a file %s -- please re-run virtualenv " "on this environment to update it",
+            activate_this,
+        )
+    fixup_scripts(home_dir, bin_dir)
     fixup_pth_and_egg_link(home_dir)
-    ## FIXME: need to fix up distutils.cfg
+    # FIXME: need to fix up distutils.cfg
 
-OK_ABS_SCRIPTS = ['python', 'python%s' % sys.version[:3],
-                  'activate', 'activate.bat', 'activate_this.py']
 
-def fixup_scripts(home_dir):
+OK_ABS_SCRIPTS = [
+    "python",
+    PY_VERSION,
+    "activate",
+    "activate.bat",
+    "activate_this.py",
+    "activate.fish",
+    "activate.csh",
+    "activate.xsh",
+]
+
+
+def fixup_scripts(_, bin_dir):
+    if IS_WIN:
+        new_shebang_args = ("{} /c".format(os.path.normcase(os.environ.get("COMSPEC", "cmd.exe"))), "", ".exe")
+    else:
+        new_shebang_args = ("/usr/bin/env", VERSION, "")
+
     # This is what we expect at the top of scripts:
-    shebang = '#!%s/bin/python' % os.path.normcase(os.path.abspath(home_dir))
+    shebang = "#!{}".format(
+        os.path.normcase(os.path.join(os.path.abspath(bin_dir), "python{}".format(new_shebang_args[2])))
+    )
     # This is what we'll put:
-    new_shebang = '#!/usr/bin/env python%s' % sys.version[:3]
-    activate = "import os; activate_this=os.path.join(os.path.dirname(__file__), 'activate_this.py'); execfile(activate_this, dict(__file__=activate_this)); del os, activate_this"
-    bin_dir = os.path.join(home_dir, 'bin')
+    new_shebang = "#!{} python{}{}".format(*new_shebang_args)
+
     for filename in os.listdir(bin_dir):
         filename = os.path.join(bin_dir, filename)
         if not os.path.isfile(filename):
-            # ignore subdirs, e.g. .svn ones.
+            # ignore child directories, e.g. .svn ones.
             continue
-        f = open(filename, 'rb')
-        lines = f.readlines()
-        f.close()
+        with open(filename, "rb") as f:
+            try:
+                lines = f.read().decode("utf-8").splitlines()
+            except UnicodeDecodeError:
+                # This is probably a binary program instead
+                # of a script, so just ignore it.
+                continue
         if not lines:
-            logger.warn('Script %s is an empty file' % filename)
+            logger.warn("Script %s is an empty file", filename)
             continue
-        if not lines[0].strip().startswith(shebang):
+
+        old_shebang = lines[0].strip()
+        old_shebang = old_shebang[0:2] + os.path.normcase(old_shebang[2:])
+
+        if not old_shebang.startswith(shebang):
             if os.path.basename(filename) in OK_ABS_SCRIPTS:
-                logger.debug('Cannot make script %s relative' % filename)
+                logger.debug("Cannot make script %s relative", filename)
             elif lines[0].strip() == new_shebang:
-                logger.info('Script %s has already been made relative' % filename)
+                logger.info("Script %s has already been made relative", filename)
             else:
-                logger.warn('Script %s cannot be made relative (it\'s not a normal script that starts with %s)'
-                            % (filename, shebang))
+                logger.warn(
+                    "Script %s cannot be made relative (it's not a normal script that starts with %s)",
+                    filename,
+                    shebang,
+                )
             continue
-        logger.notify('Making script %s relative' % filename)
-        lines = [new_shebang+'\n', activate+'\n'] + lines[1:]
-        f = open(filename, 'wb')
-        f.writelines(lines)
-        f.close()
+        logger.notify("Making script %s relative", filename)
+        script = relative_script([new_shebang] + lines[1:])
+        with open(filename, "wb") as f:
+            f.write("\n".join(script).encode("utf-8"))
+
+
+def relative_script(lines):
+    """Return a script that'll work in a relocatable environment."""
+    activate = (
+        "import os; "
+        "activate_this=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'activate_this.py'); "
+        "exec(compile(open(activate_this).read(), activate_this, 'exec'), { '__file__': activate_this}); "
+        "del os, activate_this"
+    )
+    # Find the last future statement in the script. If we insert the activation
+    # line before a future statement, Python will raise a SyntaxError.
+    activate_at = None
+    for idx, line in reversed(list(enumerate(lines))):
+        if line.split()[:3] == ["from", "__future__", "import"]:
+            activate_at = idx + 1
+            break
+    if activate_at is None:
+        # Activate after the shebang.
+        activate_at = 1
+    return lines[:activate_at] + ["", activate, ""] + lines[activate_at:]
+
 
 def fixup_pth_and_egg_link(home_dir, sys_path=None):
     """Makes .pth and .egg-link files use relative paths"""
     home_dir = os.path.normcase(os.path.abspath(home_dir))
     if sys_path is None:
         sys_path = sys.path
-    for path in sys_path:
-        if not path:
-            path = '.'
-        if not os.path.isdir(path):
+    for a_path in sys_path:
+        if not a_path:
+            a_path = "."
+        if not os.path.isdir(a_path):
             continue
-        path = os.path.normcase(os.path.abspath(path))
-        if not path.startswith(home_dir):
-            logger.debug('Skipping system (non-environment) directory %s' % path)
+        a_path = os.path.normcase(os.path.abspath(a_path))
+        if not a_path.startswith(home_dir):
+            logger.debug("Skipping system (non-environment) directory %s", a_path)
             continue
-        for filename in os.listdir(path):
-            filename = os.path.join(path, filename)
-            if filename.endswith('.pth'):
+        for filename in os.listdir(a_path):
+            filename = os.path.join(a_path, filename)
+            if filename.endswith(".pth"):
                 if not os.access(filename, os.W_OK):
-                    logger.warn('Cannot write .pth file %s, skipping' % filename)
+                    logger.warn("Cannot write .pth file %s, skipping", filename)
                 else:
                     fixup_pth_file(filename)
-            if filename.endswith('.egg-link'):
+            if filename.endswith(".egg-link"):
                 if not os.access(filename, os.W_OK):
-                    logger.warn('Cannot write .egg-link file %s, skipping' % filename)
+                    logger.warn("Cannot write .egg-link file %s, skipping", filename)
                 else:
                     fixup_egg_link(filename)
 
+
 def fixup_pth_file(filename):
     lines = []
-    prev_lines = []
-    f = open(filename)
-    prev_lines = f.readlines()
-    f.close()
+    with open(filename) as f:
+        prev_lines = f.readlines()
     for line in prev_lines:
         line = line.strip()
-        if (not line or line.startswith('#') or line.startswith('import ')
-            or os.path.abspath(line) != line):
+        if not line or line.startswith("#") or line.startswith("import ") or os.path.abspath(line) != line:
             lines.append(line)
         else:
             new_value = make_relative_path(filename, line)
             if line != new_value:
-                logger.debug('Rewriting path %s as %s (in %s)' % (line, new_value, filename))
+                logger.debug("Rewriting path {} as {} (in {})".format(line, new_value, filename))
             lines.append(new_value)
     if lines == prev_lines:
-        logger.info('No changes to .pth file %s' % filename)
+        logger.info("No changes to .pth file %s", filename)
         return
-    logger.notify('Making paths in .pth file %s relative' % filename)
-    f = open(filename, 'w')
-    f.write('\n'.join(lines) + '\n')
-    f.close()
+    logger.notify("Making paths in .pth file %s relative", filename)
+    with open(filename, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
 
 def fixup_egg_link(filename):
-    f = open(filename)
-    link = f.read().strip()
-    f.close()
+    with open(filename) as f:
+        link = f.readline().strip()
     if os.path.abspath(link) != link:
-        logger.debug('Link in %s already relative' % filename)
+        logger.debug("Link in %s already relative", filename)
         return
     new_link = make_relative_path(filename, link)
-    logger.notify('Rewriting link %s in %s as %s' % (link, filename, new_link))
-    f = open(filename, 'w')
-    f.write(new_link)
-    f.close()
+    logger.notify("Rewriting link {} in {} as {}".format(link, filename, new_link))
+    with open(filename, "w") as f:
+        f.write(new_link)
+
 
 def make_relative_path(source, dest, dest_is_directory=True):
     """
@@ -1050,6 +2057,8 @@ def make_relative_path(source, dest, dest_is_directory=True):
     if not dest_is_directory:
         dest_filename = os.path.basename(dest)
         dest = os.path.dirname(dest)
+    else:
+        dest_filename = None
     dest = os.path.normpath(os.path.abspath(dest))
     source = os.path.normpath(os.path.abspath(source))
     dest_parts = dest.strip(os.path.sep).split(os.path.sep)
@@ -1057,20 +2066,20 @@ def make_relative_path(source, dest, dest_is_directory=True):
     while dest_parts and source_parts and dest_parts[0] == source_parts[0]:
         dest_parts.pop(0)
         source_parts.pop(0)
-    full_parts = ['..']*len(source_parts) + dest_parts
-    if not dest_is_directory:
+    full_parts = [".."] * len(source_parts) + dest_parts
+    if not dest_is_directory and dest_filename is not None:
         full_parts.append(dest_filename)
     if not full_parts:
         # Special case for the current directory (otherwise it'd be '')
-        return './'
+        return "./"
     return os.path.sep.join(full_parts)
 
 
+FILE_PATH = __file__ if os.path.isabs(__file__) else os.path.join(os.getcwd(), __file__)
 
-############################################################
-## Bootstrap script creation:
 
-def create_bootstrap_script(extra_text, python_version=''):
+# Bootstrap script creation:
+def create_bootstrap_script(extra_text, python_version=""):
     """
     Creates a bootstrap script, which is like this script but with
     extend_parser, adjust_options, and after_install hooks.
@@ -1105,22 +2114,21 @@ def create_bootstrap_script(extra_text, python_version=''):
         This example immediately installs a package, and runs a setup
         script from that package.
 
-    If you provide something like ``python_version='2.4'`` then the
-    script will start with ``#!/usr/bin/env python2.4`` instead of
+    If you provide something like ``python_version='2.5'`` then the
+    script will start with ``#!/usr/bin/env python2.5`` instead of
     ``#!/usr/bin/env python``.  You can use this when the script must
     be run with a particular Python version.
     """
-    filename = __file__
-    if filename.endswith('.pyc'):
+    filename = FILE_PATH
+    if filename.endswith(".pyc"):
         filename = filename[:-1]
-    f = open(filename, 'rb')
-    content = f.read()
-    f.close()
-    py_exe = 'python%s' % python_version
-    content = (('#!/usr/bin/env %s\n' % py_exe)
-               + '## WARNING: This file is generated\n'
-               + content)
-    return content.replace('##EXT' 'END##', extra_text)
+    with codecs.open(filename, "r", encoding="utf-8") as f:
+        content = f.read()
+    py_exe = "python{}".format(python_version)
+    content = "#!/usr/bin/env {}\n# WARNING: This file is generated\n{}".format(py_exe, content)
+    # we build the string as two, to avoid replacing here, but yes further done
+    return content.replace("# EXTEND - " "bootstrap here", extra_text)
+
 
 
 def after_install(options, home_dir):
@@ -1133,380 +2141,513 @@ def after_install(options, home_dir):
 def install_package(home_dir, package_name):
     import os
     opts = os.environ.get("INSTALL_OPTS","").split()
-    cmd = [join(home_dir, 'bin', 'easy_install')]
+    cmd = [join(home_dir, 'bin', 'pip')]
     for opt in opts:
         cmd.append(opt)
+    cmd.append("install")
     cmd.append(package_name)
-    print "Running cmd: %s" % cmd.__str__()
+    print("Running cmd: %s" % cmd.__str__())
     subprocess.call(cmd)
 
 
-##file site.py
-SITE_PY = """
-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
-yBXo8FFND74JkgILcmKn2vJbYxD8H2/QG9E=
-""".decode("base64").decode("zlib")
 
-##file ez_setup.py
-EZ_SETUP_PY = """
-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
-178BYnMUkw==
-""".decode("base64").decode("zlib")
+def convert(s):
+    b = base64.b64decode(s.encode("ascii"))
+    return zlib.decompress(b).decode("utf-8")
 
-##file distribute_setup.py
-DISTRIBUTE_SETUP_PY = """
-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
-""".decode("base64").decode("zlib")
 
-##file activate.sh
-ACTIVATE_SH = """
-eJytVFFv2jAQfs+vuIU+QDWK+tqKB6oigdRC1bBOW1sZk1yIpWAj2yGj0/77ziFAUijStPIA2Hc+
-f/7u+64Bk0QYiEWKsMiMhRlCZjCCXNgEfKMyHSLMhOzw0IoVt+jDeazVAmbcJOdeA9Yqg5BLqSzo
-TIKwEAmNoU3Xnhfh9hQ0W/DbA/o0QKNBCyqNAOVKaCUXKC2suBZ8lqIpskQMz9CW4J+x8d0texo+
-Tr717thDbzLw4RWuwSYoi0z3cdvdY6m7DPy1VNoWibu9TDocB4eKeCxOwvgxGYxHg/F9/xiYXfAA
-0v7YAbBd6CS8ehaBLCktmmgSlRGpEVqiv+gPcBnBm0m+Qp6IMIGErxA4/VAoVIuFC9uE26L1ZSkS
-QMjTlCRgFcwJAXWU/sVKu8WSk0bKo+YC4DvJRGW2DFsh52WZWqIjCM4cuRAmXM7RQE5645H7WoPT
-Dl1LulgScozeUX/TC6jpbbVZ/QwG7Kn/GAzHoyPkF09r6xo9HzUxuDzWveDyoG2UeNCv4PJko8rw
-FsImZRvtj572wL4QLgLSBV8qGaGxOnOewXfYGhBgGsM24cu729sutDXb9uo/HvlzExdaY0rdrxmt
-Ys/63Z5Xgdr1GassGfO9koTqe7wDHxGNGw+Wi0p2h7Gb4YiNevd9xq7KtKpFd7j3inds0Q5FrBN7
-LtIUYi5St1/NMi7LKdZpDhdLuwZ6FwkTmhsTUMaMR2SNdc7XLaoXFrahqQdTqtUs6Myu4YoUu6vb
-guspCFm4ytsL6sNB8IFtu7UjFWlUnO00s7nhDWqssdth0Lu567OHx/H9w+TkjYWKd8ItyvlTAo+S
-LxBeanVf/GmhP+rsoR8a4EwpeEpTgRgin0OPdiQZdy7CctYrLcq5XR5BhMTa5VWnk+f5xRtasvrq
-gsZBx6jY5lxjh7sqnbrvnisQp1T6KNiX6fQV9m/D1GC9SvPEQ1v7g+WIrxjaMf9Js/QT5uh/ztB/
-n5/b2Uk0/AXm/2MV
-""".decode("base64").decode("zlib")
+# file site.py
+SITE_PY = convert(
+    """
+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
+"""
+)
 
-##file activate.bat
-ACTIVATE_BAT = """
-eJyFUssKgzAQvAfyD3swYH+hItSiVKlGsalQKOyhauvFHOr/U+MzFcWc9jEzO7vkVLw+EmRZUvIt
-GsiCVNydED2e2YhahkgJJVUJtWwgL8qqLnJI0jhKBJiUQPsUv6/YRmJcKDkMlBGOcehOmptctgJj
-e2IP4cfcjyNvFOwVp/JSdWqMygq+MthmkwHNojmfhjuRh3iAGffncsPYhpl2mm5sbY+9QzjC7ylt
-sFy6LTEL3rKRcLsGicrXV++4HVz1jzN4Vta+BnsingM+nMLSiB53KfkBsnmnEA==
-""".decode("base64").decode("zlib")
+# file activate.sh
+ACTIVATE_SH = convert(
+    """
+eJytVW1P2zAQ/u5fcaQVG9s6VvjGVLQyKoEELWo6JjZQMMmVWEudynYK5eW/75w3kgbYh9EPbe27
+s5977p5zCyah0DAVEcIs0QauEBKNAdwIE4Kj40T5CFdCbnLfiAU36MCHqYpncMV1+IG1YBkn4HMp
+YwMqkSAMBEKhb6IlY0xM4Tc47fu9vnvguaMf4++DzqMDPdr74sDFVzAhSgb0QT+MwTmjw1IY+cXG
+gtO+EnOzA+ftYtsG765vZYG3dOX2NpsKxgIsUML7DbhP7YnUaKAzhfkyiH3Y3QxwsSmTKIKt3fUu
+S31aoNB6xVEAKBdCxXKG0sCCK8GvItS51xpl07mD9v1pf/zRe4QLijOJkhqMShAoWzIAQQ7Qj7gi
+GrkBHkVpOFnzeCLEGx3te6eH48mP/pF30p8c7NB5xAhUKLEfa+o57Ya7U3rg7TxWJnUs97KcG0Gp
+nXj6B5qzycFoeDA6HrwAqbQ3gJWWJrzS9CrIupctaUZ82qQ6jBMqUICG2ivtP+AygDsdfoKbUPgh
+hHyBwOmHTH48m1mzCakGtqfyo6jBfSoJ1cbEcE0IqH3o3zRWdjHn1Hx5qP4M8JNkECcmNxshr/Nj
+ao6WIGhbisEPubxGDTekJx7YryVYbdC11GNzQo5BUQCiXxbq6KRUPzyUm79IMaeDsXs4GnaeK0Oa
+ZEdRF5cdXSPtlQK73Rcq63YbJXW7zVq63VeLmJsLIJlLYR0MT5/SX7PYuvlEkLEMUJOQrIRxBV4L
+XIymUDisrQDoWFOh/eL2R0bjKbMLpTDCBa9pujIt6nczVkHbczyvsvQ8h+U8VFNiDbERk5lQ80XF
+e9Pz9g6H3rB/PPC8ndytquMS95MgLGG0w2plfU2qLwjLwlqR6epV6SjN2jO9pZr9/qHb3zsaeCfj
+0fHJpNGYq43QsyBdW+Gnoju3T4RmxxCnsNaD2xc6suleOxQjjfWA95c0HFDyGcJ5jfhz53IDasH5
+NKx0tk2+Bcf8D4JOFNrZkEgeCa7zF4SSEOadprmukAdLC1ghq3pUJFl9b9bXV04itdt3g7FsWT5Z
+8yUNHQmdWe7ntL85WTe/yRx8gxn4n/Pvf2bfc3OPavYXWw6XFQ==
+"""
+)
 
-##file deactivate.bat
-DEACTIVATE_BAT = """
-eJxzSE3OyFfIT0vj4spMU0hJTcvMS01RiPf3cYkP8wwKCXX0iQ8I8vcNCFHQ4FIAguLUEgWIgK0q
-FlWqXJpcICVYpGzx2BAZ4uHv5+Hv6wq1BWINXBTdKriEKkI1DhW2QAfhttcxxANiFZCBbglQSJUL
-i2dASrm4rFz9XLgAwJNbyQ==
-""".decode("base64").decode("zlib")
+# file activate.fish
+ACTIVATE_FISH = convert(
+    """
+eJytVm1v2zYQ/q5fcZUdyClqGVuHfQgwDGnjIQYSO3DcAMM6yLREWxxo0iMpty7243ekLImy5RQY
+lg+xTd7rc3cPrweLnGlYM05hW2gDKwqFphn+Y2IDSy0LlVJYMTEiqWF7Ymi8ZjpfwtsvzORMAAFV
+CGGF7TkMIDdmdzMa2V86p5zHqdzCNWiqNZPibRz04E6CkMYqAjOQMUVTww9xEKwLgV6kgGRFdM7W
+h2RHTA7DDMKPUuypMhodOkfuwkjQckttIBuwKpASAWhObgT7RsMA8E9T41SOxvpEbfb1hVWqLhqh
+P37400mspXKO8FAZwGx9mR/jeHiU67AW9psfN/3aSBkSFVn5meYSPMHAXngoWG+XUHDpnqPgwOlA
+oXRlc4d/wCiIbiKIPovoxGVGqzpbf9H4KxZoz5QpCKdiD1uZUSAiQ+umUMK6NjnFaqot4ZgWikqx
+pcLEkfPaQ0ELjOSZfwt7ohhZcaqdFFuDodh8Q4GwJbOHu+RlMl98un1Inm4X92ENcc81l8bu2mDz
+FSvbWq7Rhq7T/K9M64Lq0U/vfwbCDVXY0tYW5Bg8R5xqm5XvQQnQb5Pn++RlPH+ezKYlUGEcQvhZ
+hNfYFDDkBt7XulXZh5uvpfVBu2LnuVzXupRretnQuWajeOydWodCt7Ar7Hfg/X1xP5vezx7HYXAW
+R313Gk198XocbbFXonGYP81nj0+LZIbYzyd3TTy22aru1DD8GxLsJQdzslNyuzNedzxjGNj5FE8P
+wGWKLbl0E5tUFlxdlrZtCefyi2teRbdyj6JyDUvP7rLiQM87XcbtnDmcmw+8iMaKaOoNUKRPfJSz
+pI1U1AUjFdswQXjjx3cPXXl7AukZOt/ToJfx9IvaVaJ2WY/SVfXH05d2uUPHPThDIbz5BSIhRYbH
+qrBsQ6NWEfl6WN296Y55d8hk2n3VENiFdP2X5YKIP8R1li7THnwSNlOmFOV0T3wqiwOPPNv5BUE1
+VR4+ECaJ9zNJQmv//2O4/8hsVaRnpILs1nqV+yWh1UR2WdFJOgBbJBf2vfRHSfJhMk2mt49jROKo
+UuO97Dd0srQ9hYdxUH5aUjghm+5QPELrkqe+lfar2PTb7mByPBhuy7PjNuGka2L71s4suZs83354
+GB/nJzw+jB/l7uBGPi2wmbCR2sRQ+yZIGaczeqSh1uT7Q3820y3xTk7AwSN72gqorw0xhX7n1iBP
+R6MUsXub3nFywBXujBSt+1K5MuKT4lMZpMRNRjHcJ9DqHj+zXz2ZydquiO/gL7uU7hTdIcQuOH+L
+EGRLG9/+w9JM1pG0kuaBc2VUTJg1RFf6Sked4jDAXJJUcsy9XG9eebsbc4MrfQ1RhzIMcHiojbjd
+HaFntuLSEoJ5x7NQw1nr2NkOqV3T+g3qIQ54ubrXgp0032bvamC6yP4kaNfx/wIsXsYv
+"""
+)
 
-##file distutils-init.py
-DISTUTILS_INIT = """
-eJytVl2L6zYQffevGBKK7XavKe3bhVBo78uFSyml0IdlEVpbTtR1JCMpm6S/vjOSY0v+uO1DDbs4
-0tF8nJk5sjz32jjQNpPhzd7H1ys3SqqjhcfCL1q18vgbN1YY2Kc/pQWlHXB4l8ZdeCfUO5x1c+nE
-E1gNVwE1V3CxAqQDp6GVqgF3EmBd08nXLGukUfws4IDBVD13p2pYoS3rLk52ltF6hPhLS1XM4EUc
-VsVYKzvBWPkE+WgmLzPZjkaUNmd6KVI3JRwWoRSLM6P98mMG+Dw4q+il8Ev07P7ATCNmRlfQ8/qN
-HwVwB99Y4H0vMHAi6BWZUoEhoqXTNXdSK+A2LN6tE+fJ0E+7MhOdFSEM5lNgrJIKWXDF908wy87D
-xE3UoHsxkegZTaHIHGNSSYfm+ntelpURvCnK7NEWBI/ap/b8Z1m232N2rj7B60V2DRM3B5NpaLSw
-KnfwpvQVTviHOR+F88lhQyBAGlE7be6DoRNg9ldsG3218IHa6MRNU+tGBEYIggwafRk6yzsXDcVU
-9Ua08kYxt+F3x12LRaQi52j0xx/ywFxrdMRqVevzmaummlIYEp0WsCAaX8cFb6buuLUTqEgQQ6/Q
-04iWRoF38m/BdE8VtlBY0bURiB6KG1crpMZwc2fIjqWh+1UrkSLpWUIP8PySwLKv4qPGSVqDuMPy
-dywQ+gS7L1irXVkm5pJsq3l+Ib1lMOvUrxI+/mBBY4KB+WpUtcO06RtzckNvQ6vYj1lGoZM2sdDG
-fryJPYJVn/Cfka8XSqNaoLKhmOlqXMzW9+YBVp1EtIThZtOwzCRvMaARa+0xD0b2kcaJGwJsMbc7
-hLUfY4vKvsCOBdvDnyfuRbzmXRdGTZgPF7oGQkJACWVD22IMQdhx0npt5S2f+pXO+OwH6d+hwiS5
-7IJOjcK2emj1zBy1aONHByfAMoraw6WlrSIFTbGghqASoRCjVncYROFpXM4uYSqhGnuVeGvks4jz
-cjnCoR5GnPW7KOh4maVbdFeoplgJ3wh3MSrAsv/QuMjOspnTKRl1fTYqqNisv7uTVnhF1GhoBFbp
-lh+OcXN2riA5ZrYXtWxlfcDuC8U5kLoN3CCJYXGpesO6dx6rU0zGMtjU6cNlmW0Fid8Sja4ZG+Z3
-fTPbyj+mZnZ2wSQK8RaT9Km0ySRuLpm0DkUUL0ra3WQ2BgGJ7v9I9SKqNKZ/IR4R28RHm+vEz5ic
-nZ2IH7bfub8pU1PR3gr10W7xLTfHh6Z6bgZ7K14G7Mj/1z5J6MFo6V5e07H0Ou78dTyeI+mxKOpI
-eC2KMSj6HKxd6Uudf/n886fPv+f++x1lbASlmjQuPz8OvGA0j7j2eCu/4bcW6SFeCuNJ0W1GQHI5
-iwC9Ey0bjtHd9P4dPA++XxLnZDVuxvFEtlm3lf5a2c02u2LRYXHH/AOs8pIa
-""".decode("base64").decode("zlib")
+# file activate.csh
+ACTIVATE_CSH = convert(
+    """
+eJx9VNtO4zAQffdXDKEiUEFhX8t22bJFWqRyEVuQVkKy3Hi6sZQ44Dit+sK379hJittG5KGqPZdz
+fOZyCLNUlbBQGUJelRbmCFWJElbKphCVRWUShLnS5yKxaiksDpIyjaC/MEUO9Lc/YIfwt6ggEVoX
+FkylQVmQymBis7Wz/jJIcRLma5iIpZIIEwXXmSgVfJf+Qs5//suFygZJkf8YMFaiBY2rTGkcxa8s
+ZkxkSpQgsWUBsUVi27viD9MJf7l9mj2Pp/xxPPsNByO4gKMjoCSol+Dvot6e3/A9cl6VdmB71ksw
+mIoyvYROnKeHu8dZiARvpMebHe0CeccvoLz9sjY5tq3h5v6lgY5eD4b9yGFFutCSrkzlRMAm554y
+we3bWhYJqXcIzx5bGYMZLoW2sBRGiXmG5YAFsdsIvhA7rCDiPDhyHtXl2lOQpGhkZtuVCKKH7+ec
+X9/e8/vx3Q3nw00EfWoBxwFWrRTBeSWiE7Apagb0OXRKz7XIEUbQFcMwK7HLOT6OtwlZQo9PIGao
+pVrULKj64Ysnt3/G19ObtgkCJrXzF74jRz2MaCnJgtcN5B7wLfK2DedOp4vGydPcet5urq2XBEZv
+DcnQpBZVJt0KUBqEa4YzpS0a3x7odFOm0Dlqe9oEkN8qVUlK01/iKfSa3LRRKmqkBc2vBKFpmyCs
+XG4d2yYyEQZBzIvKOgLN+JDveiVoaXyqedVYOkTrmCRqutrfNVHr6xMFBhh9QD/qNQuGLvq72d03
+3Jy2CtGCf0rca/tp+N4BXqsflKquRr0L2sjmuClOu+/8/NKvTQsNZ3l9ZqxeTew//1a6EA==
+"""
+)
 
-##file distutils.cfg
-DISTUTILS_CFG = """
+# file activate.xsh
+ACTIVATE_XSH = convert(
+    """
+eJyNU11PwjAUfe+vuNY9sIj7ASQ+YCSBRD6i02gIaSq7gyWjXdqyaIz/3XYwVmB+9GFZ78c57T2n
+lNIXKfQa+NJkJTcIeqmywkAqFZSZMlueoygppSRVcgPvrjgyUuYask0hlYEVGqaxAK6B7f8JSTAF
+lmCN2uFqpcMeAbuyFGjxkcglhUwAzzOuUe9SbiWY18H5vm5B6sbgM4qir8jSdCib3t+x59FD/NS/
+Z7N+PKRdoDRskAIXhBsIziqPyFrSf9O9xsPpZDgdD85JD6lz6kPqtwM0RYdx1bnB5Lka2u5cxzML
+vKLWTjZ7mI5n8b8A9rUNjpAiQW3U1gmKFIQ0lXpW1gblEh4xT6EuvGjXtHGFE5ZcwlZotGhKYY4l
+FwZKrjL+lqMmvoXmp4dYhKQV1M7d6yPEv5jNKcqYf1VGbcmZB5x4lRcCfzfvLXaBiCdJ5wj46uD+
+Tmg3luR2NGGT/nhgGbpgX48wN7HaYhcUFjlfYrULCTkxWru36jF59rJ9NlJlf7JQde5j11VS+yZr
+0d22eUPaxdycLKMTvqWjR3610emDtgTu36ylcJe83rhv/di/AYN1UZY=
+"""
+)
+
+# file activate.bat
+ACTIVATE_BAT = convert(
+    """
+eJyVk1FLhEAUhd8X/A8XWSkf28dCyMUpBR3FzAiCS+WYwq4TOdXfb0Z3dTJdyCfveO85n8frNXut
+OPCyNFbGqmUCzDxIs3s3REJzB1GrEE3VVJdQsLJuWAEYh97QkaRxlGRwbqxAXp1Uf+RYM32W1LKB
+7Vp2nJC6DReD9m+5qeQ6Wd+a/SN7dlzn9oI7dxsSXJCcoXOskfLgYXdv/j8LnXiM8iGg/RmiZmOr
+bFMSgcebMwGfKhgbBIfnL14X8P7BX3Zs38J3LSoQFdtD3YCVuJlvnfgmj5kfUz+OCLxxqUWoF9zk
+qtYAFyZkBsO9ArzUh/td0ZqP9IskElTFMsnwb4/GqeoLPUlZT5dJvf8Id5hQIONynUSa2G0Wc+m8
+Z+w2w4/Tt2hbYT0hbgOK1I0I4tUw/QOTZfLE
+"""
+)
+
+# file deactivate.bat
+DEACTIVATE_BAT = convert(
+    """
+eJyFkN0KgkAUhO8F32EQpHqFQEjQUPAPMaErqVxzId3IrV6/3ST/UDp3c86c4WN25FIysKJQFVVp
+CEfqxsnB9DI7SA25i20fFqtXHM+GYL0BZzi9GM1xf7DzjVQN3pSX4CWpQGvokZk4uqrQAjXjyElB
+a5IjCz0r+2VHcehHCa5MZNmB5e7TdqMqECMptHZh6DN/utb7Zs6CejsO/QNzTJwwcELfHgJJPcTp
+TFOk7rCM1f92aG38HzBR5KgjoYdIQk5hZPWLGNLfd/MN+wANyJE5
+"""
+)
+
+# file activate.ps1
+ACTIVATE_PS = convert(
+    """
+eJytVU1v4jAQvftXTNNoF9QNvSP1kG6RikQpIiyX3ZXlJkOx5NiR46RFK/77Oh+QkEBVrXYOSPZ8
++L2ZN8FNQ80TM149TgO68FePcAduvOMyVyEzXMlRvAtVHDMZjRJmtsStE+79YEIfpksbHySCG29h
+vTBYYqpEjtXJcY9lb0cjZwj2WqM0hGwyGRbV4VWoFybGETJ7zpnBwc/0jZtw+xvcuZIPmBqdFS4c
+wh8C1vgGBit7XT2RM83Zi8AxfZ490PV0ufrhz8oXD/GFuSjz8YHd5ZRj/BJjZUms60hweqEOeEGo
+EqwJlJl7cgbggemYKhHRnGuTMUETreLEnEA8Bla+AulHuV2sU4Nx89ivSxktjGVTDpwm83UbTbto
+Jwy8idZK+9X8Ai7sQMXuu5KGywy7j1xdmGJh1xCg2EBUe68+ptRI5OO4ZBepsIax7yutdNcgkp3Z
+Wo8XQ3XrMv2aFknXkMkUDXCtUWDOpDkKLSUNEPCkklFDjhC33Sg7wcOWkG6zC2frSMgc3xq9nWgL
+vDmLEXoSBBsvMmzETUhb5073yVtK76dzOvefJtRaEUaDyYJSB25aRaqpdXIth8C/n03oYvn8tFgd
+ptht7hnVtebtOPVYTvV+Lumutw+NpBzatKFEUzDwpN1Sp62u3uC7cCoJ+lEEZosQZqlRVggaN/wd
+jCov8Z2nVtav0Nm5koANzbnK0hozzctp3MGXTy5uYefJ3FwoPjzm7ludRJHiv/FmHbphpovPc832
+G7xkBiIlv9pfnoZMR8DN6P83wZX41s13Bu6g/cfS2x9vhmwDwyE4pw3tF/t8N/fkLzQ3ME8=
+"""
+)
+
+# file distutils-init.py
+DISTUTILS_INIT = convert(
+    """
+eJytV21v5DQQ/p5fMaRCJLANcAcSqlghuBdUcRzo6BdUnSI3cXZNs3bO9m679+uZsbOJnWR7fKBS
+u65nPC/PvK7YdUpbUCYR/mSOw/GBaSnkxiTJBaiuUjUHYUAqCwwOQts9a7k8wE7V+5avwCh44FAx
+CXuDnBasgkbIGuyWg7F1K+5Q0LWTzaT9DG7wgdL3oCR0x+64QkaUv9sbC3ccdXjBeMssaG5EzQ0I
+SeJQDkq77I52q+TXyCcawevLx+JYfIRaaF5ZpY8nP7ztSYIEyXYc1uhu0TG7LfobIhm7t6I1Jd0H
+HP8oIbMJe+YFFmXZiJaXZb6CdBCQ5olohudS6R0dslhBDuuZEdnszSA/v0oAf07xKOiQpTcIaxCG
+QQN0rLpnG0TQwucGWNdxpg1FA1H1+IEhHFpVMSsQfWb85dFYvhsF/YS+8NZwr710lpdlIaTh2mbf
+rGDqFFxgdnxgV/D6h2ffukcIBUotDlwbVFQK2Sj4EbLnK/iud8px+TjhRzLcac7acvRpTdSiVawu
+fVpkaTk6PzKmK3irJJ/atoIsRRL9kpw/f/u1fHn97tWLmz/e/Z3nTunoaWwSfmCuFTtWbYXkmFUD
+z9NJMzUgLdF9YRHA7pjmgxByiWvv31RV8Zfa64q/xix449jOOz0JxejH2QB8HwQg8NgeO26SiDIL
+heMpfndxuMFz5p0oKI1H1TGgi6CSwFiX6XgVgUEsBd2WjVa70msKFa56CPOnbZ5I9EnkZZL0jP5M
+o1LwR9Tb51ssMfdmX8AL1R1d9Wje8gP2NSw7q8Xd3iKMxGL1cUShLDU/CBeKEo2KZRYh1efkY8U7
+Cz+fJL7SWulRWseM6WvzFOBFqQMxScjhoFX0EaGLFSVKpWQjNuSXMEi4MvcCa3Jw4Y4ZbtAWuUl6
+095iBAKrRga0Aw80OjAhqy3c7UVbl/zRwlgZUCtu5BcW7qV6gC3+YpPacOvwxFCZoJc7OVuaFQ84
+U9SDgUuaMVuma2rGvoMRC3Y8rfb92HG6ee1qoNO8EY8YuL4mupbZBnst9eIUhT5/lnonYoyKSu12
+TNbF6EGP2niBDVThcbjwyVG1GJ+RK4tYguqreUODkrXiIy9VRy3ZZIa3zbRC0W68LRAZzfQRQ4xt
+HScmNbyY01XSjHUNt+8jNt6iSMw3aXAgVzybPVkFAc3/m4rZHRZvK+xpuhne5ZOKnz0YB0zUUClm
+LrV9ILGjvsEUSfO48COQi2VYkyfCvBjc4Z++GXgB09sgQ9YQ5MJFoIVOfVaaqyQha2lHKn3huYFP
+KBJb8VIYX/doeTHjSnBr8YkT34eZ07hCWMOimh6LPrMQar8cYTF0yojHdIw37nPavenXpxRHWABc
+s0kXJujs0eKbKdcs4qdgR4yh1Y5dGCJlMdNoC5Y5NgvcbXD9adGIzAEzLy/iKbiszYPA/Wtm8UIJ
+OEGYljt14Bk9z5OYROuXrLMF8zW3ey09W+JX0E+EHPFZSIMwvcYWHucYNtXSb8u4AtCAHRiLmNRn
+1UCevMyoabqBiRt3tcYS9fFZUw/q4UEc/eW8N/X3Tn1YyyEec3NjpSeVWMXJOTNx5tWqcsNwLu5E
+TM5hEMJTTuGZyMPGdQ5N+r7zBJpInqNJjbjGkUbUs+iGTEAt63+Ee2ZVbNMnwacF6yz4AXEZ/Ama
+5RTNk7yefGB+5ESiAtoi/AE9+5LpjemBdfj0Ehf09Lzht5qzCwT9oL00zZZaWjzEWjfEwoU9mMiD
+UbThVzZ34U7fXP+C315S91UcO9rAFLen4fr29OA9WnOyC1c8Zu5xNaLeyNo2WNvPmkCtc2ICqidc
+zmg+LaPu/BXc9srfx9pJbJiSw5NZkgXxWMiyBWpyNjdmeRbmzb+31cHS
+"""
+)
+
+# file distutils.cfg
+DISTUTILS_CFG = convert(
+    """
 eJxNj00KwkAMhfc9xYNuxe4Ft57AjYiUtDO1wXSmNJnK3N5pdSEEAu8nH6lxHVlRhtDHMPATA4uH
 xJ4EFmGbvfJiicSHFRzUSISMY6hq3GLCRLnIvSTnEefN0FIjw5tF0Hkk9Q5dRunBsVoyFi24aaLg
 9FDOlL0FPGluf4QjcInLlxd6f6rqkgPu/5nHLg0cXCscXoozRrP51DRT3j9QNl99AP53T2Q=
-""".decode("base64").decode("zlib")
+"""
+)
 
-##file activate_this.py
-ACTIVATE_THIS = """
-eJyNUk2L3DAMvftXiCxLEphmSvc2MIcu9NaWHnopwxCcRNlRN7GD7clM/n0lp5mPZQs1JLb8pKcn
-WUmSPE9w9GReAM9Yt9RhFg7kSzmtoKE6ZGU0ynJ7AfIcJnuEE3Wd0nWgUQcEQWEkF466QzMCf+Ss
-6dGEQqmfgtbaQIWcDxs4HdBElv7og1wBg3gmH0TMjykcrAEyAd3gkP8rMDaocMDbHBWZ9RBdVZIk
-SgU3bRTwWjQrPNc4BPiue/zinHUz7DRxws/eowtkTUSyiMhKfi2y3NHMdXX0itcOpYMOh3Ww61g8
-luJSDFP6tmH3ftyki2eeJ7mifrAugJ/8crReqUqztC0fC4kuGnKGxWf/snXlZb8kzXMmboW0GDod
-Wut62G4hPZF5+pTO5XtiKYOuX/UL+ptcvy2ZTPKvIP1KFdeTiuuHxTXNFXYe/5+km0nmJ3r0KTxG
-YSM6z23fbZ7276Tg9x5LdiuFjok7noks1sP2tWscpeRX6KaRnRuT3WnKlQQ51F3JlC2dmSvSRENd
-j3wvetUDfLOjDDLPYtPwjDJb7yHYeNXyMPMLtdEQKRtl8HQrdLdX3O4YxZP7RvfcNH6ZCPMsi8td
-qZvLAN7yFnoY0DSZhOUXj4WWy+tZ8190ud1tPu5Zzy2N+gOGaVfA
-""".decode("base64").decode("zlib")
+# file activate_this.py
+ACTIVATE_THIS = convert(
+    """
+eJylVE1v2zAMvetXENqh9pZ5wHYL0EMOBdqh64It7RAEhaE4TKzOlgxJ+ULR/15Sdhr341BsOcSW
+9fj4SD5JSjkqgt6ogLDRLqxVhWYDS+ugWDuHJoA2AV3jkP6HQlx7BNxhkdgGTRJK7fOlrjDNHKpF
+kg7g/iSPX/L8ZAhP+w9pJsSEVlAoA3OEtccFbEs0sLdrqNc+8CegTdxpH7RZwXgfSmv6+QdgbCDS
+Z1rn2nxpIjQTUkqh68a6ANYf3rwO+PS+90IEtx8KoN9BqcBdgU2AK1XjmXPWtdtOaZI08h5d0NbE
+nURO+3r/qRWpTIX4AFQTBS64AAgWxqPJOUQaYBjQUxuvFxgLZtBCOyyCdftU0DKnJZxSnVmjQpnR
+ypD85LBWc8/P5CAhTQVtUcO0s2YmOZu8PcZ7bLI7q00y66hv4RMcA7IVhqQNGoCUaeabSofkGEz0
+Yq6oI68VdYSx5m5uwIOjAp1elQHU3G5eVPhM683Fr8n16DI/u7qJkjkPk6nFom8G6AJqcq2PU//c
+qOKvWiG3l4GlpbE1na1aQ9RYlMpoX4uL3/l4Op4Sf6m8CsElZBYqttk3+3yDzpMFcm2WlqZH2O/T
+yfnPK0ITKmsqFejM1JkPygW/1dR4eac2irB6CU/w1lcsLe+k+V7DYv+5OMp6qefc6X4VnsiwaulY
+6fvJXrN4bKOJ6s/Fyyrg9BTkVptvX2UEtSkJ18b8ZwkcfhTwXrKqJWuHd/+Q3T/IjLWqkHxk7f0B
+pW9kFXTaNlwn+TjWSglSwaiMbMRP8l7yTAltE5AOc5VT8FLvDm2KC3F87VnyBzuZrUakdMERXe0P
+7luSN+leWsYF5x/QAQdqeoHC4JZYKrr5+uq6t9mQXT/T8VrWHMRwmoqO9yGTUHF8YN/EHPbFI/bz
+/no=
+"""
+)
 
-if __name__ == '__main__':
+# file python-config
+PYTHON_CONFIG = convert(
+    """
+eJyNVV1P2zAUfc+v8ODBiSABxlulTipbO6p1LWqBgVhlhcZpPYUkctzSivHfd6+dpGloGH2Ja/ue
+e+65Hz78xNhtf3x90xmw7vCWsRPGLvpDNuz87MKfdKMWSWxZ4ilNpCLZJiuWc66SVFUOZkkcirll
+rfxIBAzOMtImDzSVPBRrekwoX/OZu/0r4lm0DHiG60g86u8sjPw5rCyy86NRkB8QuuBRSqfAKESn
+3orLTCQxE3GYkC9tYp8fk89OSwNsmXgizrhUtnumeSgeo5GbLUMk49Rv+2nK48Cm/qMwfp333J2/
+dVcAGE0CIQHBsgIeEr4Wij0LtWDLzJ9ze5YEvH2WI6CHTAVcSu9ZCsXtgxu81CIvp6/k4eXsdfo7
+PvDCRD75yi41QitfzlcPp1OI7i/1/iQitqnr0iMgQ+A6wa+IKwwdxyk9IiXNAzgquTFU8NIxAVjM
+osm1Zz526e+shQ4hKRVci69nPC3Kw4NQEmkQ65E7OodxorSvxjvpBjQHDmWFIQ1mlmzlS5vedseT
+/mgIEsMJ7Lxz2bLAF9M5xeLEhdbHxpWOw0GdkJApMVBRF1y+a0z3c9WZPAXGFcFrJgCIB+024uad
+0CrzmEoRa3Ub4swNIHPGf7QDV+2uj2OiFWsChgCwjKqN6rp5izpbH6Wc1O1TclQTP/XVwi6anTr1
+1sbubjZLI1+VptPSdCfwnFBrB1jvebrTA9uUhU2/9gad7xPqeFkaQcnnLbCViZK8d7R1kxzFrIJV
+8EaLYmKYpvGVkig+3C5HCXbM1jGCGekiM2pRCVPyRyXYdPf6kcbWEQ36F5V4Gq9N7icNNw+JHwRE
+LTgxRXACpvnQv/PuT0xCCAywY/K4hE6Now2qDwaSE5FB+1agsoUveYDepS83qFcF1NufvULD3fTl
+g6Hgf7WBt6lzMeiyyWVn3P1WVbwaczHmTzE9A5SyItTVgFYyvs/L/fXlaNgbw8v3azT+0eikVlWD
+/vBHbzQumP23uBCjsYdrL9OWARwxs/nuLOzeXbPJTa/Xv6sUmQir5pC1YRLz3eA+CD8Z0XpcW8v9
+MZWF36ryyXXf3yBIz6nzqz8Muyz0m5Qj7OexfYo/Ph3LqvkHUg7AuA==
+"""
+)
+
+MH_MAGIC = 0xFEEDFACE
+MH_CIGAM = 0xCEFAEDFE
+MH_MAGIC_64 = 0xFEEDFACF
+MH_CIGAM_64 = 0xCFFAEDFE
+FAT_MAGIC = 0xCAFEBABE
+BIG_ENDIAN = ">"
+LITTLE_ENDIAN = "<"
+LC_LOAD_DYLIB = 0xC
+maxint = getattr(sys, "maxsize", getattr(sys, "maxint", None))
+
+
+class FileView(object):
+    """
+    A proxy for file-like objects that exposes a given view of a file.
+    Modified from macholib.
+    """
+
+    def __init__(self, file_obj, start=0, size=maxint):
+        if isinstance(file_obj, FileView):
+            self._file_obj = file_obj._file_obj
+        else:
+            self._file_obj = file_obj
+        self._start = start
+        self._end = start + size
+        self._pos = 0
+
+    def __repr__(self):
+        return "<fileview [{:d}, {:d}] {!r}>".format(self._start, self._end, self._file_obj)
+
+    def tell(self):
+        return self._pos
+
+    def _checkwindow(self, seek_to, op):
+        if not (self._start <= seek_to <= self._end):
+            raise IOError(
+                "{} to offset {:d} is outside window [{:d}, {:d}]".format(op, seek_to, self._start, self._end)
+            )
+
+    def seek(self, offset, whence=0):
+        seek_to = offset
+        if whence == os.SEEK_SET:
+            seek_to += self._start
+        elif whence == os.SEEK_CUR:
+            seek_to += self._start + self._pos
+        elif whence == os.SEEK_END:
+            seek_to += self._end
+        else:
+            raise IOError("Invalid whence argument to seek: {!r}".format(whence))
+        self._checkwindow(seek_to, "seek")
+        self._file_obj.seek(seek_to)
+        self._pos = seek_to - self._start
+
+    def write(self, content):
+        here = self._start + self._pos
+        self._checkwindow(here, "write")
+        self._checkwindow(here + len(content), "write")
+        self._file_obj.seek(here, os.SEEK_SET)
+        self._file_obj.write(content)
+        self._pos += len(content)
+
+    def read(self, size=maxint):
+        assert size >= 0
+        here = self._start + self._pos
+        self._checkwindow(here, "read")
+        size = min(size, self._end - here)
+        self._file_obj.seek(here, os.SEEK_SET)
+        read_bytes = self._file_obj.read(size)
+        self._pos += len(read_bytes)
+        return read_bytes
+
+
+def read_data(file, endian, num=1):
+    """
+    Read a given number of 32-bits unsigned integers from the given file
+    with the given endianness.
+    """
+    res = struct.unpack(endian + "L" * num, file.read(num * 4))
+    if len(res) == 1:
+        return res[0]
+    return res
+
+
+def mach_o_change(at_path, what, value):
+    """
+    Replace a given name (what) in any LC_LOAD_DYLIB command found in
+    the given binary with a new name (value), provided it's shorter.
+    """
+
+    def do_macho(file, bits, endian):
+        # Read Mach-O header (the magic number is assumed read by the caller)
+        cpu_type, cpu_sub_type, file_type, n_commands, size_of_commands, flags = read_data(file, endian, 6)
+        # 64-bits header has one more field.
+        if bits == 64:
+            read_data(file, endian)
+        # The header is followed by n commands
+        for _ in range(n_commands):
+            where = file.tell()
+            # Read command header
+            cmd, cmd_size = read_data(file, endian, 2)
+            if cmd == LC_LOAD_DYLIB:
+                # The first data field in LC_LOAD_DYLIB commands is the
+                # offset of the name, starting from the beginning of the
+                # command.
+                name_offset = read_data(file, endian)
+                file.seek(where + name_offset, os.SEEK_SET)
+                # Read the NUL terminated string
+                load = file.read(cmd_size - name_offset).decode()
+                load = load[: load.index("\0")]
+                # If the string is what is being replaced, overwrite it.
+                if load == what:
+                    file.seek(where + name_offset, os.SEEK_SET)
+                    file.write(value.encode() + b"\0")
+            # Seek to the next command
+            file.seek(where + cmd_size, os.SEEK_SET)
+
+    def do_file(file, offset=0, size=maxint):
+        file = FileView(file, offset, size)
+        # Read magic number
+        magic = read_data(file, BIG_ENDIAN)
+        if magic == FAT_MAGIC:
+            # Fat binaries contain nfat_arch Mach-O binaries
+            n_fat_arch = read_data(file, BIG_ENDIAN)
+            for _ in range(n_fat_arch):
+                # Read arch header
+                cpu_type, cpu_sub_type, offset, size, align = read_data(file, BIG_ENDIAN, 5)
+                do_file(file, offset, size)
+        elif magic == MH_MAGIC:
+            do_macho(file, 32, BIG_ENDIAN)
+        elif magic == MH_CIGAM:
+            do_macho(file, 32, LITTLE_ENDIAN)
+        elif magic == MH_MAGIC_64:
+            do_macho(file, 64, BIG_ENDIAN)
+        elif magic == MH_CIGAM_64:
+            do_macho(file, 64, LITTLE_ENDIAN)
+
+    assert len(what) >= len(value)
+
+    with open(at_path, "r+b") as f:
+        do_file(f)
+
+
+if __name__ == "__main__":
     main()
-
-## TODO:
-## Copy python.exe.manifest
-## Monkeypatch distutils.sysconfig

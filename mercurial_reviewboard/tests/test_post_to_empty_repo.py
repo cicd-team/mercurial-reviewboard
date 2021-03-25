@@ -11,14 +11,14 @@ def test_diff(mock_send):
 
     repo = get_repo(ui, 'two_revs')
     opts = get_initial_opts()
-    opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/no_revs'
+    opts['outgoingrepo'] = b'mercurial_reviewboard/tests/repos/no_revs'
     opts['outgoingchanges'] = False
     opts['outgoing'] = False
 
     postreview(ui, repo, **opts)
 
-    expected = open('mercurial_reviewboard/tests/diffs/two_revs_1', 
-        'r').read()
+    expected = open('mercurial_reviewboard/tests/diffs/two_revs_1',
+                    'r').read()
     eq_(expected, mock_send.call_args[0][4])
 
 
@@ -28,12 +28,12 @@ def test_parentdiff(mock_send):
 
     repo = get_repo(ui, 'two_revs')
     opts = get_initial_opts()
-    opts['outgoingrepo'] = 'mercurial_reviewboard/tests/repos/no_revs'
+    opts['outgoingrepo'] = b'mercurial_reviewboard/tests/repos/no_revs'
     opts['outgoingchanges'] = False
     opts['outgoing'] = False
-    
+
     postreview(ui, repo, **opts)
-    
-    expected = open('mercurial_reviewboard/tests/diffs/two_revs_0', 
-        'r').read()
+
+    expected = open('mercurial_reviewboard/tests/diffs/two_revs_0',
+                    'r').read()
     eq_(expected, mock_send.call_args[0][5])

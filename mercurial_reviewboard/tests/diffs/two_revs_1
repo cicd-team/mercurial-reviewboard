@@ -1,5 +1,15 @@
-diff -r a8ea53640b24 -r 669e757d4a24 b
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/b	Sat Nov 07 09:50:35 2009 -0600
+# HG changeset patch
+# User b'john doe'
+# Date 1257609035 21600
+#      b'Sat Nov 07 09:50:35 2009 -0600'
+# Branch b'default'
+# Node ID b'669e757d4a24bc1d448df2efafb52f7d6c42ec93'
+# Parent  b'a8ea53640b24c0553ea407e672ab74d118f8602a'
+1
+
+diff --git a/b b/b
+new file mode 100644
+--- /dev/null
++++ b/b
 @@ -0,0 +1,1 @@
 +b
