@@ -1,4 +1,4 @@
 mock==0.7.2
 nose==1.0.0
-mercurial==5.7
+mercurial==5.8
 requests

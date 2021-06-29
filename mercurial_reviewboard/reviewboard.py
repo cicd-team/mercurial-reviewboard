@@ -1,9 +1,10 @@
 # api code for the reviewboard extension, inspired/copied from reviewboard
 # post-review code.
 
+import base64
 import getpass
 import http.cookiejar
-import base64
+
 import requests
 
 try:
@@ -110,8 +111,8 @@ class ReviewBoardHTTPPasswordMgr(urllib.request.HTTPPasswordMgr):
                 print("==> HTTP Authentication Required")
                 print('Enter username and password for "%s" at %s' % \
                       (realm, urlparse(uri)[1]))
-                self.rb_user = mercurial.ui.ui().prompt('Username: ')
-                self.rb_pass = getpass.getpass('Password: ')
+                self.rb_user = bytes(input('Username: '))
+                self.rb_pass = str.encode(getpass.getpass('Password: '))
 
             return self.rb_user, self.rb_pass
         else:
@@ -490,9 +491,9 @@ class Api10Client(ApiClient):
                 return
 
         if not username:
-            username = mercurial.ui.ui().prompt('Username: ')
+            username = bytes(input('Username: '))
         if not password:
-            password = getpass.getpass('Password: ')
+            password = str.encode(getpass.getpass('Password: '))
 
         self._api_post('/api/json/accounts/login/', {
             'username': username,
@@ -579,9 +580,9 @@ def make_rbclient(ui, url, username, password, proxy=None, apiver=''):
 
     if not httpclient.has_valid_cookie(ui):
         if not username:
-            username = mercurial.ui.ui().prompt('Username: ')
+            username = bytes(input('Username: '))
         if not password:
-            password = getpass.getpass('Password: ')
+            password = str.encode(getpass.getpass('Password: '))
 
         httpclient.set_credentials(username.decode('utf-8'), password.decode('utf-8'))
 
