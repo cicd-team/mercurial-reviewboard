@@ -148,10 +148,11 @@ class ReviewFetcher(object):
 
         self.ui.status(str.encode("Bundles found: %s\n" % bundles))
         self.ui.pushbuffer()
+        bundles_encoded=[s.encode() for s in bundles]
         try:
             try:
                 self.ui.status(b"Apply bundle to local repository\n")
-                commands.unbundle(self.ui, self.repo, *bundles)
+                commands.unbundle(self.ui, self.repo, *bundles_encoded)
             except LookupError as e:
                 self.ui.status(str.encode("Cannot unbundle: %s\n" % e.message))
                 raise util.error.Abort("Cannot unbundle: %s" % e.message)
@@ -248,7 +249,7 @@ class ReviewFetcher(object):
         self.ui.pushbuffer()
         try:
             commands.update(self.ui, self.repo, heads[0].rev())
-            commands.merge(self.ui, self.repo, tool="internal:fail")
+            commands.merge(self.ui, self.repo, tool=b'internal:fail')
 
             message = str.encode("Automatic merge after review request %s fetch" % requestid)
             commands.commit(self.ui, self.repo, message=message)
@@ -271,7 +272,7 @@ class ReviewFetcher(object):
         self.reviewboard.submit(request.id)
 
     def push_reviewed(self):
-        push_result = commands.push(self.ui, self.repo, self.rbrepo.path, new_branch=True)
+        push_result = commands.push(self.ui, self.repo, self.rbrepo.path.encode(), new_branch=True)
         self.ui.status(str.encode("Push result %d\n" % push_result))
         if push_result != 0:
             if push_result == 1:
@@ -311,10 +312,6 @@ class ReviewFetcher(object):
     def strip_outgoing(self):
         from . import findoutgoing
         remoterepo = hg.peer(self.repo, self.opts, str.encode(self.rbrepo.path))
-        # if HgVersion(util.version()) >= HgVersion('2.1'):
-        #     remoterepo = hg.peer(self.repo, self.opts, self.rbrepo.path)
-        # else:
-        #     remoterepo = hg.repository(self.ui, self.rbrepo.path)
 
         out = findoutgoing(self.repo, remoterepo)
         if not out:
@@ -322,20 +319,27 @@ class ReviewFetcher(object):
 
         cl = self.repo.changelog
         revs = set([cl.rev(r) for r in out])
-        if HgVersion(util.version()) >= HgVersion('2.3'):
+        
+        if HgVersion(util.version().decode()) >= HgVersion('2.3'):
             descendants = set(cl.descendants(revs))
         else:
             descendants = set(cl.descendants(*revs))
 
         roots = revs.difference(descendants)
 
+
         roots = list(roots)
         roots.sort()
         roots.reverse()
-        self.ui.status("Stripping local revisions %s\n" % roots)
+        
+        string_list = [str(item) for item in roots]
+        rootstr='Stripping local revisions '+ ' '.join(string_list)
+
+        self.ui.status(rootstr.encode())
 
         for node in roots:
-            self.ui.note("Stripping revision %s...\n" % node)
+            tmpbstr="Stripping revision %s..." + str(node)+"\n"
+            self.ui.note(tmpbstr.encode())
             self.ui.pushbuffer()
             try:
                 repair.strip(self.ui, self.repo, cl.node(node), backup='none')
