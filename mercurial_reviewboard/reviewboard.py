@@ -1,30 +1,20 @@
 # api code for the reviewboard extension, inspired/copied from reviewboard
 # post-review code.
-
 import base64
+import datetime
 import getpass
 import http.cookiejar
+import json as simplejson
+import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from random import random
+from urllib.parse import urljoin, urlparse
 
 import requests
-
-try:
-    # Python 3
-    from email.generator import _make_boundary as make_boundary
-except ImportError:
-    # Python 2
-    from mimetools import choose_boundary as make_boundary
-
-import os
-import urllib.request, urllib.error, urllib.parse
-
-try:
-    import json as simplejson
-except ImportError:
-    # python 2.5
-    from . import simplejson
-import mercurial.ui
-import datetime
-from urllib.parse import urljoin, urlparse
+import sys
 
 
 class APIError(Exception):
@@ -235,7 +225,8 @@ class HttpClient:
         try:
             response = requests.request(method=method, url=url.decode('utf-8').replace(" ", "%20"), data=body, headers=headers)
             # r = ApiRequest(method, url.decode('utf-8').replace(" ", "%20"), body, headers)
-            data = response.text
+            #data = response.text
+            data = response.content
             try:
                 self._cj.save(self.cookie_file)
             except:
@@ -269,7 +260,7 @@ class HttpClient:
         """
         Encodes data for use in an HTTP POST.
         """
-        BOUNDARY = make_boundary()
+        BOUNDARY = _make_boundary()
         content = ""
 
         fields = fields or {}
@@ -443,6 +434,10 @@ class Api20Client(ApiClient):
         if id in self._requestcache:
             return self._requestcache[id]
         else:
+            if isinstance(id,int):
+                id=str(id)
+            elif isinstance(id,bytes):
+                id=id.decode()
             result = self._api_request('GET', '/api/review-requests/%s/' % id)
             self._requestcache[id] = result['review_request']
             return result['review_request']
@@ -604,3 +599,24 @@ def make_rbclient(ui, url, username, password, proxy=None, apiver=''):
         return cli
     else:
         raise Exception("Unknown API version: %s" % apiver)
+
+
+_width = len(repr(sys.maxsize-1))
+_fmt = '%%0%dd' % _width
+
+def _make_boundary(cls, text=None):
+    # Craft a random boundary.  If text is given, ensure that the chosen
+    # boundary doesn't appear in the text.
+    token = random.randrange(sys.maxsize)
+    boundary = ('=' * 15) + (_fmt % token) + '=='
+    if text is None:
+        return boundary
+    b = boundary
+    counter = 0
+    while True:
+        cre = cls._compile_re('^--' + re.escape(b) + '(--)?$', re.MULTILINE)
+        if not cre.search(text):
+            break
+        b = boundary + '.' + str(counter)
+        counter += 1
+    return b

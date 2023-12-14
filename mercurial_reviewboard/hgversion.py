@@ -26,7 +26,7 @@ class HgVersion:
     def __init__(self, versionString):
         self.parts = versionString.split('.')
 
-    def __cmp__(self, other):
+    def __ge__(self, other):
         limit = min(len(self.parts), len(other.parts))
 
         for i in range(limit):
