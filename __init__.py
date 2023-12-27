@@ -1,1 +1,1 @@
-from mercurial_reviewboard import *
+from .mercurial_reviewboard import *
