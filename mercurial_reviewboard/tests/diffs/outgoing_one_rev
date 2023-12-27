@@ -1,5 +1,15 @@
-diff -r 000000000000 -r 1a42212a3e0c a
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/a	Tue Apr 12 13:27:51 2011 -0500
+# HG changeset patch
+# User b'john doe'
+# Date 1302632871 18000
+#      b'Tue Apr 12 13:27:51 2011 -0500'
+# Branch b'default'
+# Node ID b'1a42212a3e0c2dcf69d24f29918c64d491958524'
+# Parent  b'0000000000000000000000000000000000000000'
+0
+
+diff --git a/a b/a
+new file mode 100644
+--- /dev/null
++++ b/a
 @@ -0,0 +1,1 @@
 +a
