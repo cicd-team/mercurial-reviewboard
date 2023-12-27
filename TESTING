@@ -26,7 +26,7 @@ most recent one:
 
 In order to run the tests, run:
 
-    ENV/bin/nosetests --nocapture
+    ENV/bin/nosetests
     
 
 TEST DATA

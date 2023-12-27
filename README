@@ -78,7 +78,7 @@ TESTING:
 In order to run the plugin tests, run:
 
     python mercurial_reviewboard/tests/virtualenv/bootstrap.py ENV --no-site-packages
-    ENV/bin/nosetests --nocapture
+    ENV/bin/nosetests
     
 See the TESTING file for more information.
 
