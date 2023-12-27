@@ -1,10 +1,11 @@
-.idea
-build
-dist
 *.pyc
+dist/*
 distribute-*
+ENV
+mercurial_reviewboard.egg-info/*
 *.pyo
 *.orig
 *.rej
 __pycache__
+.idea
 venv
