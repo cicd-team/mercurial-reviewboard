@@ -16,7 +16,9 @@ from .hgversion import HgVersion
 from .reviewboard import make_rbclient, ReviewBoardError
 from .utils import cmp
 
-__version__ = '4.2.0'
+
+__version__ = '5.0.0'
+
 
 cmdtable = {}
 command = registrar.command(cmdtable)
@@ -100,7 +102,6 @@ def fetch_reviewed(ui, repo, **opts):
           (b'B', b'bugs_closed', b'', str.encode('comma separated list of bug IDs addressed by the change')),
           (b'', b'username', b'', str.encode('username for the ReviewBoard site')),
           (b'', b'password', b'', str.encode('password for the ReviewBoard site')),
-          (b'', b'apiver', b'', str.encode('ReviewBoard API version (e.g. 1.0, 2.0)')),
           (b'a', b'attachbundle', True,
            str.encode('Attach the changeset bundle as a file in order to pull it with pullreviewed')),
           (b'', b'old_server', False, str.encode(
@@ -139,9 +140,9 @@ repository accessible to Review Board is not the upstream repository.
 HG issue 3841 workaround
 https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unknown
 '''
-    oldin, oldout, olderr = sys.stdin, sys.stdout, sys.stderr
+    #oldin, oldout, olderr = sys.stdin, sys.stdout, sys.stderr
     # sys.stdin, sys.stdout, sys.stderr = ui.fin, ui.fout, ui.ferr
-    sys.stdin, sys.stderr = ui.fin, ui.ferr
+    #sys.stdin, sys.stderr = ui.fin, ui.ferr
 
     ui.status(str.encode('postreview plugin, version %s\n' % __version__))
 
@@ -167,8 +168,8 @@ https://bitbucket.org/tortoisehg/thg/issue/3841/reviewboard-extension-error-unkn
     diff, parentdiff = create_review_data(ui, repo, c, parent, rparent)
 
     send_review(ui, repo, c, parent, diff, parentdiff, opts)
-    ui.status(b"sended")
-    sys.stdin, sys.stdout, sys.stderr = oldin, oldout, olderr
+
+    #sys.stdin, sys.stdout, sys.stderr = oldin, oldout, olderr
 
 
 def find_rparent(ui, repo, c, opts):
@@ -244,8 +245,9 @@ def send_review(ui, repo, c, parentc, diff, parentdiff, opts):
     else:
         request_id = new_review(ui, fields, diff, parentdiff,
                                 opts, files)
-
-    request_url = '%sr/%s/' % (find_server(ui, opts).decode('utf-8'), request_id)
+    if type(request_id) == bytes:
+        request_id = request_id.decode('utf-8')
+    request_url = '%s/r/%s/' % (find_server(ui, opts).decode('utf-8'), request_id)
     if not request_url.startswith('http'):
         request_url = 'http://%s' % request_url
 
@@ -327,17 +329,18 @@ def getreviewboard(ui, opts):
     password = opts.get(b'password') or ui.config(b'reviewboard', b'password')
     if password:
         ui.status(str.encode('password: %s\n' % '**********'))
-
+    api_token = opts.get(b'api_token') or ui.config(b'reviewboard', b'api_token')
     try:
-        return make_rbclient(server, username, password, proxy=proxy,
-                             apiver=opts.get('apiver'))
+
+        return make_rbclient(server, username, password, proxy=proxy, api_token=api_token)
+
     except ReviewBoardError as msg:
         raise error.Abort(str.encode(str(msg)))
 
 
 def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
-    update_fields(reviewboard, fields)
+
     try:
         reviewboard.delete_attachments_with_caption(request_id, BUNDLE_ATTACHMENT_CAPTION)
         reviewboard.update_request(request_id, fields, diff, parentdiff, files)
@@ -350,7 +353,7 @@ def update_review(request_id, ui, fields, diff, parentdiff, opts, files=None):
 def new_review(ui, fields, diff, parentdiff, opts, files=None):
     reviewboard = getreviewboard(ui, opts)
     repo_id = find_reviewboard_repo_id(ui, reviewboard, opts)
-    update_fields(reviewboard, fields)
+
     try:
         request_id = reviewboard.new_request(repo_id, fields, diff, parentdiff, files)
         if opts['publish']:
@@ -358,16 +361,6 @@ def new_review(ui, fields, diff, parentdiff, opts, files=None):
     except ReviewBoardError as msg:
         raise error.Abort(str.encode(str(msg)))
     return request_id
-
-
-def update_fields(reviewboard, fields):
-    '''Some fields are added or deprecated in API version 2.0
-       By default we prefer API v2.0 and have to fix data for backward compatibility.
-    '''
-    if reviewboard.apiver == '1.0':
-        # commit_id field is introduced in API 2.0 (changenum field is deprecated in favor of the commit_id field)
-        if 'commit_id' in fields:
-            fields['changenum'] = fields.pop('commit_id')
 
 
 def find_reviewboard_repo_id(ui, reviewboard, opts):

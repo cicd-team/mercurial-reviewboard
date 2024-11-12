@@ -5,14 +5,13 @@ import datetime
 import getpass
 import http.cookiejar
 import json as simplejson
+import mimetypes
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from random import random
+import uuid
 from urllib.parse import urljoin, urlparse
-
-import requests
 import io
 
 
@@ -86,13 +85,13 @@ class ReviewBoardHTTPPasswordMgr(urllib.request.HTTPPasswordMgr):
 
     def __init__(self, reviewboard_url):
         self.passwd = {}
-        self.rb_url = reviewboard_url
+        self.rb_url = reviewboard_url if type(reviewboard_url) != bytes else reviewboard_url.decode('utf-8')
         self.rb_user = None
         self.rb_pass = None
 
     def set_credentials(self, username, password):
-        self.rb_user = username
-        self.rb_pass = password
+        self.rb_user = username if type(username) != bytes else username.decode('utf-8')
+        self.rb_pass = password if type(password) != bytes else password.decode('utf-8')
 
     def find_user_password(self, realm, uri):
         if uri.startswith(self.rb_url):
@@ -100,9 +99,8 @@ class ReviewBoardHTTPPasswordMgr(urllib.request.HTTPPasswordMgr):
                 print("==> HTTP Authentication Required")
                 print('Enter username and password for "%s" at %s' % \
                       (realm, urlparse(uri)[1]))
-                self.rb_user = bytes(input('Username: '))
-                self.rb_pass = str.encode(getpass.getpass('Password: '))
-
+                self.rb_user = input('Username: ')
+                self.rb_pass = getpass.getpass('Password: ')
             return self.rb_user, self.rb_pass
         else:
             # If this is an auth request for some other domain (since HTTP
@@ -128,7 +126,7 @@ class HttpErrorHandler(urllib.request.HTTPDefaultErrorHandler):
 
 
 class HttpClient:
-    def __init__(self, url, proxy=None):
+    def __init__(self, url, proxy=None, api_token=None):
         if not url.endswith(b'/'):
             url = url + b'/'
         self.url = url
@@ -141,6 +139,7 @@ class HttpClient:
             homepath = os.environ["HOME"]
         else:
             homepath = ''
+        self.api_token = api_token if type(api_token) != bytes else api_token.decode('utf-8')
         self.cookie_file = os.path.join(homepath, ".post-review-cookies.txt")
         self._cj = http.cookiejar.MozillaCookieJar(self.cookie_file)
         self._password_mgr = ReviewBoardHTTPPasswordMgr(self.url)
@@ -187,7 +186,11 @@ class HttpClient:
             # Cookie files don't store port numbers, unfortunately, so
             # get rid of the port number if it's present.
             host = host.split(b":")[0]
-            print("Looking for '%s %s' cookie in %s \n" % (host.decode('utf-8'), path.decode('utf-8'), self.cookie_file))
+
+            host = host.decode('utf-8')
+            path = path.decode('utf-8')
+            print("Looking for '%s %s' cookie in %s \n" % (host, path, self.cookie_file))
+
             self._cj.load(self.cookie_file, ignore_expires=True)
             try:
                 cookie = self._cj._cookies[host][path]['rbsessionid']
@@ -212,19 +215,16 @@ class HttpClient:
         url = urljoin(self.url, str.encode(path))
         
         headers = {}
-        if files:
-            files = self._map_files(files)
-        credentials = ('%s:%s' % (self._password_mgr.rb_user, self._password_mgr.rb_pass))
-        encoded_credentials = base64.b64encode(credentials.encode('ascii'))
-        headers["Authorization"] = 'Basic %s' % encoded_credentials.decode("ascii")
+
+        self._provide_auth_header(headers)
+
         try:
-            response = requests.request(method=method, url=url.decode('utf-8').replace(" ", "%20"), data=fields, headers=headers, files=files)
-            # r = ApiRequest(method, url.decode('utf-8').replace(" ", "%20"), body, headers)
-            #data = response.text
-            data = response.content
+            data = self._send_with_urllib(method, url.decode('utf-8').replace(" ", "%20"), fields, headers, files)
+
             try:
                 self._cj.save(self.cookie_file)
             except:
+                print("exception when cookie file saving")
                 # this can be ignored safely
                 pass
             return data
@@ -241,6 +241,14 @@ class HttpClient:
             msg = "URL Error: " + e.reason[1]
             raise ReviewBoardError({'err': {'msg': msg, 'code': code}})
 
+    def _provide_auth_header(self, headers):
+        if self.api_token:
+            headers["Authorization"] = 'token %s' % self.api_token
+        if self._password_mgr.rb_user and self._password_mgr.rb_pass:
+            credentials = ('%s:%s' % (self._password_mgr.rb_user, self._password_mgr.rb_pass))
+            encoded_credentials = base64.b64encode(credentials.encode('ascii'))
+            headers["Authorization"] = 'Basic %s' % encoded_credentials.decode("ascii")
+
     def _process_json(self, data):
         """
         Loads in a JSON file and returns the data if successful. On failure,
@@ -251,25 +259,109 @@ class HttpClient:
             raise APIError(rsp)
         return rsp
 
-    def _map_files(self, files):
-        '''
-        Maps input 'files' dictionary (bundle or diff) - name with content to a structure that will be passed to requests.request method:
-            files = {key:(filename, binary content)}
+    def _send_with_urllib(self, method, url, fields, headers, files):
+        form = MultiPartForm()
+        if fields:
+            for key in fields:
+                form.add_field(key, fields[key])
 
-        Implemented based on:
-        https://docs.python-requests.org/en/latest/user/quickstart/#post-a-multipart-encoded-file
-        https://blog.finxter.com/5-best-ways-to-convert-python-bytes-to-_io-bufferedreader/ 
-        '''
-        result = {}
-        for key in files:
-            filename = files[key]['filename']
-            content = files[key]['content']
-            if type(content) != bytes:
-                content = content.encode('utf-8')
-            result[key] = (filename, io.BufferedReader(io.BytesIO(content)))
+        if files:
+            for key in files:
+                filename = files[key]['filename']
+                content = files[key]['content']
+                if type(content) != bytes:
+                    content = content.encode('utf-8')
+                form.add_file(key, filename,
+                              fileHandle=io.BytesIO(content))
 
-        return result
+        # Build the request, including the byte-string
+        # for the data to be posted.
+        data = form.bytes()
+        r = urllib.request.Request(url, data=data, method=method)
 
+        r.add_header('Content-type', form.get_content_type())
+        r.add_header('Content-length', len(data))
+        if headers:
+            for key in headers:
+                r.add_header(key, headers[key])
+
+        return urllib.request.urlopen(r).read().decode('utf-8')
+
+class MultiPartForm:
+    """Accumulate the data to be used when posting a form."""
+
+    def __init__(self):
+        self.form_fields = []
+        self.files = []
+        # Use a large random byte string to separate
+        # parts of the MIME data.
+        self.boundary = uuid.uuid4().hex.encode('utf-8')
+        return
+
+    def get_content_type(self):
+        return 'multipart/form-data; boundary={}'.format(
+            self.boundary.decode('utf-8'))
+
+    def add_field(self, name, value):
+        """Add a simple field to the form data."""
+        self.form_fields.append((name, value))
+
+    def add_file(self, fieldname, filename, fileHandle,
+                 mimetype=None):
+        """Add a file to be uploaded."""
+        body = fileHandle.read()
+        if mimetype is None:
+            mimetype = (
+                mimetypes.guess_type(filename)[0] or
+                'application/octet-stream'
+            )
+        self.files.append((fieldname, filename, mimetype, body))
+        return
+
+    @staticmethod
+    def _form_data(name):
+        return ('Content-Disposition: form-data; '
+                'name="{}"\r\n').format(name).encode('utf-8')
+
+    @staticmethod
+    def _attached_file(name, filename):
+        return ('Content-Disposition: file; '
+                'name="{}"; filename="{}"\r\n').format(
+                    name, filename).encode('utf-8')
+
+    @staticmethod
+    def _content_type(ct):
+        return 'Content-Type: {}\r\n'.format(ct).encode('utf-8')
+
+    def bytes(self):
+        """Return a byte-string representing the form data,
+        including attached files.
+        """
+        buffer = io.BytesIO()
+        boundary = b'--' + self.boundary + b'\r\n'
+
+        # Add the form fields
+        for name, value in self.form_fields:
+            buffer.write(boundary)
+            buffer.write(self._form_data(name))
+            buffer.write(b'\r\n')
+            if type(value) != bytes:
+                buffer.write(value.encode('utf-8'))
+            else:
+                buffer.write(value)
+            buffer.write(b'\r\n')
+
+        # Add the files to upload
+        for f_name, filename, f_content_type, body in self.files:
+            buffer.write(boundary)
+            buffer.write(self._attached_file(f_name, filename))
+            buffer.write(self._content_type(f_content_type))
+            buffer.write(b'\r\n')
+            buffer.write(body)
+            buffer.write(b'\r\n')
+
+        buffer.write(b'--' + self.boundary + b'--\r\n')
+        return buffer.getvalue()
 
 class ApiClient:
     def __init__(self, httpclient, apiver):
@@ -444,135 +536,18 @@ class Api20Client(ApiClient):
                 self._api_request(furl['method'], furl['href'], f_fields, {'path': f})
 
 
-class Api10Client(ApiClient):
-    """
-    Implements the 1.0 version of the API
-    """
-
-    def __init__(self, httpclient):
-        ApiClient.__init__(self, httpclient, '1.0')
-        self._repositories = None
-        self._requests = None
-
-    def _api_post(self, url, fields=None, files=None):
-        return self._api_request('POST', url, fields, files)
-
-    def login(self, username=None, password=None):
-        if not username and not password:
-            if self._httpclient.has_valid_cookie():
-                return
-
-        if not username:
-            username = bytes(input('Username: '))
-        if not password:
-            password = str.encode(getpass.getpass('Password: '))
-
-        self._api_post('/api/json/accounts/login/', {
-            'username': username,
-            'password': password,
-        })
-
-    def repositories(self):
-        if not self._repositories:
-            rsp = self._api_post('/api/json/repositories/')
-            self._repositories = [Repository(r['id'], r['name'], r['tool'],
-                                             r['path'])
-                                  for r in rsp['repositories']]
-        return self._repositories
-
-    def requests(self):
-        if not self._requests:
-            rsp = self._api_post('/api/json/reviewrequests/all/')
-            self._requests = rsp['review_requests']
-        return self._requests
-
-    def new_request(self, repo_id, fields={}, diff='', parentdiff=''):
-        repository_path = None
-        for r in self.repositories():
-            if r.id == int(repo_id):
-                repository_path = r.path
-                break
-        if not repository_path:
-            raise ReviewBoardError("can't find repository with id: %s" % \
-                                   repo_id)
-
-        id = self._create_request(repository_path)
-
-        self._set_request_details(id, fields, diff, parentdiff)
-
-        return id
-
-    def update_request(self, id, fields={}, diff='', parentdiff=''):
-        request_id = None
-        for r in self.requests():
-            if r['id'] == int(id):
-                request_id = int(id)
-                break
-        if not request_id:
-            raise ReviewBoardError("can't find request with id: %s" % id)
-
-        self._set_request_details(request_id, fields, diff, parentdiff)
-
-        return request_id
-
-    def publish(self, id):
-        self._api_post('api/json/reviewrequests/%s/publish/' % id)
-
-    def _create_request(self, repository_path):
-        data = {'repository_path': repository_path}
-        rsp = self._api_post('/api/json/reviewrequests/new/', data)
-
-        return rsp['review_request']['id']
-
-    def _set_request_field(self, id, field, value):
-        self._api_post('/api/json/reviewrequests/%s/draft/set/' %
-                       id, {field: value})
-
-    def _upload_diff(self, id, diff, parentdiff=""):
-        data = {'path': {'filename': 'diff', 'content': diff}}
-        if parentdiff:
-            data['parent_diff_path'] = \
-                {'filename': 'parent_diff', 'content': parentdiff}
-        rsp = self._api_post('/api/json/reviewrequests/%s/diff/new/' % \
-                             id, {}, data)
-
-    def _set_fields(self, id, fields={}):
-        for field in fields:
-            self._set_request_field(id, field, fields[field])
-
-    def _set_request_details(self, id, fields, diff, parentdiff):
-        self._set_fields(id, fields)
-        if diff:
-            self._upload_diff(id, diff, parentdiff)
-
 # this method must be compatible with THG implementation to make the plugin working in totroiseHg UI: https://foss.heptapod.net/mercurial/tortoisehg/thg/-/blob/branch/stable/tortoisehg/hgqt/postreview.py#L96 
-def make_rbclient(url, username, password, proxy=None, apiver=''):
+def make_rbclient(url, username, password, proxy=None, api_token=None):
 
-    httpclient = HttpClient(url, proxy)
+    httpclient = HttpClient(url, proxy, api_token=api_token)
 
-    if not httpclient.has_valid_cookie():
+    if not httpclient.has_valid_cookie() and not api_token:
         if not username:
-            username = bytes(input('Username: '))
+            username = input('Username: ')
         if not password:
-            password = str.encode(getpass.getpass('Password: '))
+            password = getpass.getpass('Password: ')
 
-        httpclient.set_credentials(username.decode('utf-8'), password.decode('utf-8'))
+    cli = Api20Client(httpclient)
+    cli.login(username, password)
+    return cli
 
-    if not apiver:
-        # Figure out whether the server supports API version 2.0
-        try:
-            httpclient.api_request('GET', '/api/')
-            apiver = '2.0'
-        except:
-            apiver = '1.0'
-
-    if apiver == '2.0':
-        cli = Api20Client(httpclient)
-        cli.login(username.decode('utf-8'), password.decode('utf-8'))
-        return cli
-    elif apiver == '1.0':
-        cli = Api10Client(httpclient)
-        cli.login(username.decode('utf-8'), password.decode('utf-8'))
-        return cli
-    else:
-        raise Exception("Unknown API version: %s" % apiver)

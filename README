@@ -21,6 +21,7 @@ server          = http://reviewboard.example.com/
 # OPTIONAL ITEMS:
 # user            = ... # username for login
 # password        = ...
+# api_token       = ... # Authentication token to be used instead of login/pass auth. Can be generated in reviewboard account
 # target_groups   = ... # default review groups
 # target_people   = ... # default review people
 # launch_webbrowser = true # open review in a browser

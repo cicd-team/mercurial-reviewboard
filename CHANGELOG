@@ -1,3 +1,8 @@
+Version 5.0.0 (1/11/24)
+
+    * Removed 'requests' dependency
+    * Added Reviewboard Token-based Authentication
+
 Version 4.2.0 (11/01/24)
 
    * Refactored files upload to avoid broken bundle file sending  
